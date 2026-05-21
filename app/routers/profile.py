@@ -15,7 +15,7 @@ router = APIRouter(prefix="/profile")
 
 def _smtp_configured() -> bool:
     from app.config import settings
-    return bool(settings.smtp_host and settings.smtp_username)
+    return bool(settings.sharepoint_tenant_id and settings.sharepoint_client_id and (settings.smtp_from or settings.smtp_username))
 
 
 def _ctx(user, **kwargs):
