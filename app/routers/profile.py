@@ -16,8 +16,13 @@ from app.models import User
 router = APIRouter(prefix="/profile")
 
 
+def _smtp_configured() -> bool:
+    from app.config import settings
+    return bool(settings.smtp_host and settings.smtp_username)
+
+
 def _ctx(user, **kwargs):
-    return {"user": user, "qr": None, "secret": None, "error": None, "success": None, "setup_method": None, **kwargs}
+    return {"user": user, "qr": None, "secret": None, "error": None, "success": None, "setup_method": None, "smtp_configured": _smtp_configured(), **kwargs}
 
 
 def _send_email_otp(user: User, db: Session) -> None:

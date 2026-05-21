@@ -52,6 +52,7 @@
           <div class="text-xs text-gray-500">Use Microsoft Authenticator, Google Authenticator, or Authy.</div>
         </button>
       </form>
+      {% if smtp_configured %}
       <form method="post" action="/profile/2fa/setup">
         <input type="hidden" name="method" value="email">
         <button type="submit" class="w-full border border-gray-300 rounded-xl p-4 text-left hover:border-blue-400 hover:bg-blue-50 transition">
@@ -59,6 +60,12 @@
           <div class="text-xs text-gray-500">Receive a one-time code at {{ user.email }} each login.</div>
         </button>
       </form>
+      {% else %}
+      <div class="border border-dashed border-gray-200 rounded-xl p-4 opacity-50">
+        <div class="font-semibold text-sm text-gray-500 mb-1">Email Code</div>
+        <div class="text-xs text-gray-400">Not available — SMTP not configured.</div>
+      </div>
+      {% endif %}
     </div>
     {% endif %}
 
