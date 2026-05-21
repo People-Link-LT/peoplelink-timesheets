@@ -12,4 +12,3 @@ pydantic-settings>=2.2.0
 itsdangerous>=2.1.2
 pyotp>=2.9.0
 qrcode[pil]>=7.4.2
-slowapi>=0.1.9

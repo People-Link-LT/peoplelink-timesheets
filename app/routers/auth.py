@@ -3,11 +3,7 @@ from datetime import datetime, timezone, timedelta
 
 import pyotp
 from app.templates import templates
-from fastapi import APIRouter, BackgroundTasks, Depends, Request, Form
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-limiter = Limiter(key_func=get_remote_address)
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -44,7 +40,6 @@ def login_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_class=HTMLResponse)
-@limiter.limit("10/minute")
 def login_submit(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -52,6 +47,11 @@ def login_submit(
     password: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    from app.ratelimit import is_rate_limited
+    ip = request.client.host if request.client else "unknown"
+    if is_rate_limited(ip):
+        return templates.TemplateResponse(request, "login.html", {"error": "Too many login attempts. Please wait a minute and try again."})
+
     user = db.query(User).filter(User.email == email.lower().strip()).first()
     error = None
     if not user or not verify_password(password, user.password_hash):
