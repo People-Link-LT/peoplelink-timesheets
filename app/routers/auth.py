@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 
 import pyotp
 from app.templates import templates
-from fastapi import APIRouter, Depends, Request, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -22,19 +22,13 @@ def _set_auth_cookie(response, user_id: str):
     response.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax", secure=True, max_age=60 * 60 * 8)
 
 
-def _send_email_otp(user: User, db: Session) -> bool:
+def _send_email_otp(user: User, db: Session, background_tasks: BackgroundTasks) -> None:
     from app.email import send_otp_email
     code = str(random.randint(100000, 999999))
     user.email_otp = code
     user.email_otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
     db.commit()
-    try:
-        send_otp_email(user.email, user.full_name, code)
-        return True
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"Failed to send OTP email: {e}")
-        return False
+    background_tasks.add_task(send_otp_email, user.email, user.full_name, code)
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -48,6 +42,7 @@ def login_page(request: Request, db: Session = Depends(get_db)):
 @router.post("/login", response_class=HTMLResponse)
 def login_submit(
     request: Request,
+    background_tasks: BackgroundTasks,
     email: str = Form(...),
     password: str = Form(...),
     db: Session = Depends(get_db),
@@ -65,7 +60,7 @@ def login_submit(
     if user.is_2fa_enabled:
         method = user.twofa_method or "totp"
         if method == "email":
-            _send_email_otp(user, db)
+            _send_email_otp(user, db, background_tasks)
         pending_token = create_2fa_pending_token(user.id, method)
         response = RedirectResponse("/login/2fa", status_code=302)
         response.set_cookie(COOKIE_2FA, pending_token, httponly=True, samesite="lax", secure=True, max_age=600)
@@ -135,14 +130,14 @@ def login_2fa_submit(
 
 
 @router.post("/login/2fa/resend", response_class=HTMLResponse)
-def login_2fa_resend(request: Request, db: Session = Depends(get_db)):
+def login_2fa_resend(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     pending = request.cookies.get(COOKIE_2FA)
     info = verify_2fa_pending_token(pending) if pending else None
     if not info or info["method"] != "email":
         return RedirectResponse("/login", status_code=302)
     user = db.get(User, info["user_id"])
     if user:
-        _send_email_otp(user, db)
+        _send_email_otp(user, db, background_tasks)
     email_hint = user.email[:3] + "***" + user.email[user.email.index("@"):] if user else ""
     return templates.TemplateResponse(request, "login_2fa.html", {
         "error": None, "method": "email", "email_hint": email_hint,
