@@ -1,7 +1,14 @@
+import io
+import os
+import subprocess
+from datetime import datetime
+from urllib.parse import urlparse
+
 from app.templates import templates
-from fastapi import APIRouter, Depends, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
+from app.config import settings
 from app.database import get_db
 from app.auth import get_current_admin, hash_password
 from app.models import User, Team
@@ -115,3 +122,30 @@ def delete_team(team_id: str, db: Session = Depends(get_db), admin: User = Depen
 def manual_sync(admin: User = Depends(get_current_admin)):
     sync_assignments()
     return RedirectResponse("/admin/users", status_code=302)
+
+
+@router.get("/backup/download")
+def download_backup(admin: User = Depends(get_current_admin)):
+    url = urlparse(settings.database_url)
+    env = os.environ.copy()
+    env["PGPASSWORD"] = url.password or ""
+    cmd = [
+        "pg_dump",
+        "-h", url.hostname,
+        "-p", str(url.port or 5432),
+        "-U", url.username,
+        url.path.lstrip("/"),
+        "--no-owner",
+        "--no-acl",
+        "--clean",
+        "--if-exists",
+    ]
+    result = subprocess.run(cmd, capture_output=True, env=env)
+    if result.returncode != 0:
+        raise HTTPException(500, f"pg_dump failed: {result.stderr.decode()}")
+    filename = f"timesheets_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.sql"
+    return StreamingResponse(
+        io.BytesIO(result.stdout),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
