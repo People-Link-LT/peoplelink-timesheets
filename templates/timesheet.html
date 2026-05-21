@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Timesheet — PeopleLink{% endblock %}
+
+{% block content %}
+{% set active_page = "timesheet" %}
+<div class="mb-6 flex items-center justify-between flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-800">My Timesheet</h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Week {{ week.start_date.strftime('%d %b') }} – {{ week.end_date.strftime('%d %b %Y') }}
+    </p>
+  </div>
+  <div class="flex gap-2">
+    <form method="post" action="/timesheet/copy-last-week"
+          hx-post="/timesheet/copy-last-week"
+          hx-target="#entries-container"
+          hx-swap="innerHTML">
+      <button type="submit"
+        class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium px-4 py-2 rounded-lg transition flex items-center gap-2">
+        Copy from last week
+      </button>
+    </form>
+    <a href="/portfolio"
+      class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium px-4 py-2 rounded-lg transition">
+      Manage projects
+    </a>
+  </div>
+</div>
+
+<div id="copy-notice"></div>
+
+<div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="text-left px-4 py-3 font-semibold text-gray-600 w-56">Project</th>
+        <th class="text-left px-4 py-3 font-semibold text-gray-600 w-40">Task</th>
+        {% set day_labels = ["Mon", "Tue", "Wed", "Thu", "Fri"] %}
+        {% for label in day_labels %}
+        <th class="text-center px-2 py-3 font-semibold text-gray-600 w-20">{{ label }}</th>
+        {% endfor %}
+        <th class="text-center px-2 py-3 font-semibold text-gray-600 w-16">Total</th>
+        <th class="w-10"></th>
+      </tr>
+    </thead>
+    <tbody id="entries-container">
+      {% include "partials/entries_tbody.html" %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Add row form -->
+<div class="mt-5 bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+  <h2 class="text-sm font-semibold text-gray-700 mb-4">Add a row</h2>
+  {% if portfolio_assignments %}
+  <form hx-post="/timesheet/rows/add"
+        hx-target="#entries-container"
+        hx-swap="beforeend"
+        class="flex flex-wrap gap-3 items-end">
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Project</label>
+      <select name="assignment_id" required
+        class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[280px]">
+        <option value="">Select a project…</option>
+        {% for a in portfolio_assignments %}
+        <option value="{{ a.id }}">{{ a.reference_number }} — {{ a.company_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Task</label>
+      <select name="task" required
+        class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        {% for t in task_choices %}
+        <option value="{{ t }}">{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit"
+      class="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg px-4 py-2 text-sm transition">
+      + Add row
+    </button>
+  </form>
+  {% else %}
+  <p class="text-sm text-gray-500">
+    You have no projects in your portfolio yet.
+    <a href="/portfolio" class="text-blue-600 hover:underline">Add projects</a> to get started.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

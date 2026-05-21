@@ -1,0 +1,10 @@
+<input type="number" min="0" max="480"
+  value="{{ entry.monday_minutes if day == 'monday' else entry.tuesday_minutes if day == 'tuesday' else entry.wednesday_minutes if day == 'wednesday' else entry.thursday_minutes if day == 'thursday' else entry.friday_minutes }}"
+  name="minutes"
+  class="w-16 text-center border border-gray-200 rounded px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+  hx-put="/timesheet/entries/{{ entry.id }}"
+  hx-trigger="blur changed"
+  hx-vals='{"day":"{{ day }}"}'
+  hx-target="#cell-{{ entry.id }}-{{ day }}"
+  hx-swap="innerHTML"
+  hx-include="[name='minutes']">

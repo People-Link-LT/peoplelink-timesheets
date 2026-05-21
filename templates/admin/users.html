@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Admin — Users{% endblock %}
+
+{% block content %}
+{% set active_page = "admin" %}
+<div class="mb-6 flex items-center justify-between">
+  <h1 class="text-2xl font-bold text-gray-800">User Management</h1>
+  <div class="flex gap-2">
+    <a href="/admin/teams" class="bg-white border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-50 transition">Manage Teams</a>
+    <form method="post" action="/admin/sync-now">
+      <button type="submit" class="bg-white border border-gray-300 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-50 transition">
+        Sync Invenias now
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Pending approval -->
+{% set pending = users | selectattr('is_approved', 'false') | list %}
+{% if pending %}
+<div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-6">
+  <h2 class="text-sm font-semibold text-amber-800 mb-3">Pending approval ({{ pending | length }})</h2>
+  <div class="space-y-2">
+    {% for u in pending %}
+    <div class="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 border border-amber-100">
+      <div>
+        <span class="font-medium text-gray-800 text-sm">{{ u.full_name }}</span>
+        <span class="text-gray-500 text-sm ml-2">{{ u.email }}</span>
+      </div>
+      <div class="flex gap-2">
+        <form method="post" action="/admin/users/{{ u.id }}/approve">
+          <button type="submit" class="text-xs bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1 rounded-lg transition">Approve</button>
+        </form>
+        <form method="post" action="/admin/users/{{ u.id }}/reject">
+          <button type="submit" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-medium px-3 py-1 rounded-lg transition">Reject</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Create user -->
+<div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 mb-6">
+  <h2 class="text-sm font-semibold text-gray-700 mb-4">Create user</h2>
+  <form method="post" action="/admin/users/create" class="flex flex-wrap gap-3 items-end">
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Full name</label>
+      <input type="text" name="full_name" required class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Email</label>
+      <input type="email" name="email" required class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Password</label>
+      <input type="password" name="password" required minlength="8" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Team</label>
+      <select name="team_id" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="">— No team —</option>
+        {% for t in teams %}
+        <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex items-center gap-2 pb-1.5">
+      <input type="checkbox" name="is_admin" id="is_admin_new" class="w-4 h-4">
+      <label for="is_admin_new" class="text-sm text-gray-600">Admin</label>
+    </div>
+    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg px-4 py-2 text-sm transition">
+      Create
+    </button>
+  </form>
+</div>
+
+<!-- All users -->
+<div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+  <div class="px-5 py-3 bg-gray-50 border-b border-gray-200">
+    <span class="text-sm font-semibold text-gray-600">All users ({{ users | length }})</span>
+  </div>
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-xs text-gray-500 border-b border-gray-100">
+        <th class="text-left px-5 py-2 font-medium">Name</th>
+        <th class="text-left px-5 py-2 font-medium">Email</th>
+        <th class="text-left px-5 py-2 font-medium">Team</th>
+        <th class="text-center px-4 py-2 font-medium">Admin</th>
+        <th class="text-center px-4 py-2 font-medium">Approved</th>
+        <th class="px-4 py-2"></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-50">
+      {% for u in users %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-5 py-2.5 font-medium text-gray-800">{{ u.full_name }}</td>
+        <td class="px-5 py-2.5 text-gray-500">{{ u.email }}</td>
+        <td class="px-5 py-2.5 text-gray-600">{{ u.team.name if u.team else '—' }}</td>
+        <td class="px-4 py-2.5 text-center">
+          {% if u.is_admin %}<span class="text-xs bg-blue-100 text-blue-700 font-medium px-2 py-0.5 rounded-full">Admin</span>{% else %}—{% endif %}
+        </td>
+        <td class="px-4 py-2.5 text-center">
+          {% if u.is_approved %}<span class="text-green-600 font-medium text-xs">Yes</span>
+          {% else %}<span class="text-amber-600 font-medium text-xs">Pending</span>{% endif %}
+        </td>
+        <td class="px-4 py-2.5 text-right">
+          {% if u.id != user.id %}
+          <form method="post" action="/admin/users/{{ u.id }}/delete"
+                onsubmit="return confirm('Delete {{ u.full_name }}?')">
+            <button type="submit" class="text-xs text-red-400 hover:text-red-600 transition">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

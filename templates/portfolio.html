@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}My Projects — PeopleLink{% endblock %}
+
+{% block content %}
+{% set active_page = "portfolio" %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-800">My Projects</h1>
+  <p class="text-sm text-gray-500 mt-1">Select the active assignments you work on. These appear in your timesheet.</p>
+</div>
+
+<div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+  <div class="px-5 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+    <span class="text-sm font-semibold text-gray-600">Active assignments ({{ all_assignments | length }})</span>
+    <span class="text-xs text-gray-400">{{ portfolio_ids | length }} in your portfolio</span>
+  </div>
+  <div class="divide-y divide-gray-100">
+    {% for a in all_assignments %}
+    <div class="flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition">
+      <div>
+        <span class="text-sm font-semibold text-blue-600">{{ a.reference_number }}</span>
+        <span class="text-sm text-gray-700 ml-2">{{ a.company_name }}</span>
+        {% if a.title %}
+        <span class="text-xs text-gray-400 block leading-tight">{{ a.title }}</span>
+        {% endif %}
+      </div>
+      {% if a.id in portfolio_ids %}
+      <form method="post" action="/portfolio/remove">
+        <input type="hidden" name="assignment_id" value="{{ a.id }}">
+        <button type="submit"
+          class="text-xs bg-blue-600 text-white px-3 py-1 rounded-full font-medium hover:bg-blue-700 transition">
+          In portfolio ✓
+        </button>
+      </form>
+      {% else %}
+      <form method="post" action="/portfolio/add">
+        <input type="hidden" name="assignment_id" value="{{ a.id }}">
+        <button type="submit"
+          class="text-xs bg-white border border-gray-300 text-gray-600 px-3 py-1 rounded-full font-medium hover:bg-gray-50 transition">
+          + Add
+        </button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}PeopleLink Timesheets{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-gray-800">
+
+{% if user is defined and user %}
+<nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-6">
+    <span class="font-bold text-blue-700 text-lg tracking-tight">PeopleLink</span>
+    <a href="/timesheet" class="text-sm font-medium {% if request.url.path.startswith('/timesheet') %}text-blue-600 border-b-2 border-blue-600{% else %}text-gray-600 hover:text-blue-600{% endif %} pb-0.5">Timesheet</a>
+    <a href="/dashboard" class="text-sm font-medium {% if request.url.path.startswith('/dashboard') %}text-blue-600 border-b-2 border-blue-600{% else %}text-gray-600 hover:text-blue-600{% endif %} pb-0.5">Dashboard</a>
+    <a href="/portfolio" class="text-sm font-medium {% if request.url.path.startswith('/portfolio') %}text-blue-600 border-b-2 border-blue-600{% else %}text-gray-600 hover:text-blue-600{% endif %} pb-0.5">My Projects</a>
+    {% if user.is_admin %}
+    <a href="/admin/users" class="text-sm font-medium {% if request.url.path.startswith('/admin') %}text-blue-600 border-b-2 border-blue-600{% else %}text-gray-600 hover:text-blue-600{% endif %} pb-0.5">Admin</a>
+    {% endif %}
+  </div>
+  <div class="flex items-center gap-3 text-sm text-gray-500">
+    <span>{{ user.full_name }}</span>
+    <a href="/logout" class="text-red-500 hover:text-red-700">Sign out</a>
+  </div>
+</nav>
+{% endif %}
+
+<main class="max-w-7xl mx-auto px-4 py-8">
+  {% block content %}{% endblock %}
+</main>
+
+</body>
+</html>

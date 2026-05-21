@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — PeopleLink{% endblock %}
+
+{% block content %}
+{% set active_page = "dashboard" %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-800">Dashboard</h1>
+  <p class="text-sm text-gray-500 mt-1">
+    Week {{ week.start_date.strftime('%d %b') }} – {{ week.end_date.strftime('%d %b %Y') }}
+  </p>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+  <!-- Project totals -->
+  <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-3 bg-gray-50 border-b border-gray-200">
+      <h2 class="text-sm font-semibold text-gray-700">Billed hours by project this week</h2>
+    </div>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-gray-500 border-b border-gray-100">
+          <th class="text-left px-5 py-2 font-medium">Project</th>
+          <th class="text-right px-5 py-2 font-medium">Minutes</th>
+          <th class="text-right px-5 py-2 font-medium">Hours</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        {% for row in project_totals %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-5 py-2.5">
+            <span class="font-semibold text-blue-600">{{ row.reference_number }}</span>
+            <span class="text-gray-600 ml-1.5">{{ row.company_name }}</span>
+          </td>
+          <td class="px-5 py-2.5 text-right text-gray-700 tabular-nums">{{ row.total_minutes }}</td>
+          <td class="px-5 py-2.5 text-right font-semibold text-gray-800 tabular-nums">
+            {{ "%.1f"|format(row.total_minutes / 60) }}h
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="px-5 py-6 text-center text-gray-400 text-sm">No entries this week yet.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if project_totals %}
+      <tfoot class="bg-gray-50 border-t border-gray-200">
+        <tr>
+          <td class="px-5 py-2 text-xs font-semibold text-gray-600">Total</td>
+          <td class="px-5 py-2 text-right text-xs font-semibold text-gray-600 tabular-nums">
+            {{ project_totals | sum(attribute='total_minutes') }}
+          </td>
+          <td class="px-5 py-2 text-right text-xs font-semibold text-gray-800 tabular-nums">
+            {{ "%.1f"|format(project_totals | sum(attribute='total_minutes') / 60) }}h
+          </td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+
+  <!-- Team breakdown -->
+  <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+    <div class="px-5 py-3 bg-gray-50 border-b border-gray-200">
+      <h2 class="text-sm font-semibold text-gray-700">Team breakdown this week</h2>
+    </div>
+    <div class="divide-y divide-gray-100">
+      {% for team_name, members in teams.items() %}
+      <div class="px-5 py-3">
+        <div class="flex justify-between items-center mb-2">
+          <h3 class="text-xs font-bold text-gray-500 uppercase tracking-wider">{{ team_name }}</h3>
+          <span class="text-xs font-semibold text-gray-500 tabular-nums">
+            {{ "%.1f"|format(members | sum(attribute='total_minutes') / 60) }}h total
+          </span>
+        </div>
+        <div class="space-y-1">
+          {% for member in members %}
+          <div class="flex justify-between items-center text-sm">
+            <span class="text-gray-700">{{ member.name }}</span>
+            <span class="tabular-nums text-gray-600">
+              {{ member.total_minutes }}m
+              <span class="text-gray-400">({{ "%.1f"|format(member.total_minutes / 60) }}h)</span>
+            </span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="px-5 py-6 text-center text-gray-400 text-sm">No users yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
