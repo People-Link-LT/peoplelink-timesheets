@@ -1,10 +1,7 @@
-import base64
-import io
 import random
 from datetime import datetime, timezone, timedelta
 
 import pyotp
-import qrcode
 from app.templates import templates
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -50,11 +47,7 @@ def setup_2fa(
     if method == "totp":
         secret = pyotp.random_base32()
         uri = pyotp.TOTP(secret).provisioning_uri(name=user.email, issuer_name="PeopleLink Timesheets")
-        img = qrcode.make(uri)
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        qr_b64 = base64.b64encode(buf.getvalue()).decode()
-        return templates.TemplateResponse(request, "profile.html", _ctx(user, qr=qr_b64, secret=secret, setup_method="totp"))
+        return templates.TemplateResponse(request, "profile.html", _ctx(user, qr=uri, secret=secret, setup_method="totp"))
 
     elif method == "email":
         _send_email_otp(db.get(User, user.id), db, background_tasks)
@@ -90,12 +83,8 @@ def enable_2fa(
     if not valid:
         if method == "totp" and secret:
             uri = pyotp.TOTP(secret).provisioning_uri(name=user.email, issuer_name="PeopleLink Timesheets")
-            img = qrcode.make(uri)
-            buf = io.BytesIO()
-            img.save(buf, format="PNG")
-            qr_b64 = base64.b64encode(buf.getvalue()).decode()
             return templates.TemplateResponse(request, "profile.html", _ctx(
-                user, qr=qr_b64, secret=secret, setup_method="totp",
+                user, qr=uri, secret=secret, setup_method="totp",
                 error="Invalid code. Make sure your authenticator is synced and try again."
             ))
         return templates.TemplateResponse(request, "profile.html", _ctx(
