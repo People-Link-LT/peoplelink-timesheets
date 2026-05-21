@@ -1,6 +1,6 @@
+from app.templates import templates
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.database import get_db
@@ -9,7 +9,6 @@ from app.models import User, TimesheetEntry, Assignment, Team
 from app.weeks import get_or_create_week
 
 router = APIRouter(prefix="/dashboard")
-templates = Jinja2Templates(directory="templates")
 
 
 @router.get("", response_class=HTMLResponse)
@@ -78,3 +77,4 @@ def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depe
         "project_totals": project_totals,
         "teams": teams,
     })
+

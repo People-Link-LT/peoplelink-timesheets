@@ -1,13 +1,12 @@
+from app.templates import templates
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user
 from app.models import User, Assignment, UserPortfolio
 
 router = APIRouter(prefix="/portfolio")
-templates = Jinja2Templates(directory="templates")
 
 
 @router.get("", response_class=HTMLResponse)
@@ -51,3 +50,4 @@ def remove_from_portfolio(
     db.query(UserPortfolio).filter_by(user_id=user.id, assignment_id=assignment_id).delete()
     db.commit()
     return RedirectResponse("/portfolio", status_code=302)
+

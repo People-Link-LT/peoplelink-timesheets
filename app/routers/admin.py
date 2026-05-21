@@ -1,6 +1,6 @@
+from app.templates import templates
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_admin, hash_password
@@ -8,7 +8,6 @@ from app.models import User, Team
 from app.scheduler import sync_assignments
 
 router = APIRouter(prefix="/admin")
-templates = Jinja2Templates(directory="templates")
 
 
 @router.get("/users", response_class=HTMLResponse)
@@ -116,3 +115,4 @@ def delete_team(team_id: str, db: Session = Depends(get_db), admin: User = Depen
 def manual_sync(admin: User = Depends(get_current_admin)):
     sync_assignments()
     return RedirectResponse("/admin/users", status_code=302)
+
