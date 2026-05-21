@@ -13,6 +13,14 @@ class Settings(BaseSettings):
     invenias_username: str
     invenias_password: str
 
+    # SharePoint backup (optional — backup job skips if empty)
+    sharepoint_tenant_id: str = ""
+    sharepoint_client_id: str = ""
+    sharepoint_client_secret: str = ""
+    sharepoint_site_hostname: str = ""   # e.g. peoplelink.sharepoint.com
+    sharepoint_site_path: str = ""       # e.g. sites/IT
+    sharepoint_backup_folder: str = "Timesheets/Backups"
+
     model_config = {"env_file": str(Path(__file__).parent.parent / ".env")}
 
 
