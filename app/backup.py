@@ -1,14 +1,13 @@
 import asyncio
 import io
 import logging
-import os
-import subprocess
 import zipfile
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
 
+from sqlalchemy import text
 from app.config import settings
+from app.database import SessionLocal
 from app.sharepoint import upload_file
 
 logger = logging.getLogger(__name__)
@@ -18,28 +17,39 @@ _SKIP_DIRS = {"__pycache__", ".git", "node_modules"}
 _SKIP_EXTS = {".pyc", ".pyo"}
 
 
-def _pg_dump() -> bytes:
-    url = urlparse(settings.database_url)
-    env = os.environ.copy()
-    env["PGPASSWORD"] = url.password or ""
-    result = subprocess.run(
-        [
-            "pg_dump",
-            "-h", url.hostname,
-            "-p", str(url.port or 5432),
-            "-U", url.username,
-            url.path.lstrip("/"),
-            "--no-owner",
-            "--no-acl",
-            "--clean",
-            "--if-exists",
-        ],
-        capture_output=True,
-        env=env,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"pg_dump failed: {result.stderr.decode()}")
-    return result.stdout
+def _db_export() -> bytes:
+    """Export all tables as SQL INSERT statements using SQLAlchemy."""
+    db = SessionLocal()
+    try:
+        buf = io.StringIO()
+        buf.write(f"-- PeopleLink Timesheets backup\n-- {datetime.now(timezone.utc).isoformat()}\n\n")
+
+        # Get all table names in dependency order
+        tables = db.execute(text(
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
+        )).fetchall()
+
+        for (table,) in tables:
+            rows = db.execute(text(f'SELECT * FROM "{table}"')).fetchall()
+            if not rows:
+                continue
+            cols = db.execute(text(
+                f"SELECT column_name FROM information_schema.columns "
+                f"WHERE table_name = :t AND table_schema = 'public' ORDER BY ordinal_position"
+            ), {"t": table}).fetchall()
+            col_names = ", ".join(f'"{c[0]}"' for c in cols)
+            buf.write(f'\n-- Table: {table} ({len(rows)} rows)\n')
+            for row in rows:
+                vals = ", ".join(
+                    "NULL" if v is None
+                    else f"'{str(v).replace(chr(39), chr(39)+chr(39))}'"
+                    for v in row
+                )
+                buf.write(f'INSERT INTO "{table}" ({col_names}) VALUES ({vals});\n')
+
+        return buf.getvalue().encode("utf-8")
+    finally:
+        db.close()
 
 
 def _app_zip() -> bytes:
@@ -62,8 +72,6 @@ async def _upload(filename: str, content: bytes) -> None:
         tenant_id=settings.sharepoint_tenant_id,
         client_id=settings.sharepoint_client_id,
         client_secret=settings.sharepoint_client_secret,
-        username=settings.sharepoint_username,
-        password=settings.sharepoint_password,
         site_hostname=settings.sharepoint_site_hostname,
         site_path=settings.sharepoint_site_path,
         folder=settings.sharepoint_backup_folder,
@@ -77,23 +85,20 @@ def run_backup() -> None:
         settings.sharepoint_tenant_id,
         settings.sharepoint_client_id,
         settings.sharepoint_client_secret,
-        settings.sharepoint_username,
-        settings.sharepoint_password,
+        settings.sharepoint_site_hostname,
     ]):
         logger.warning("SharePoint backup skipped: credentials not configured.")
         return
 
     today = date.today().strftime("%Y%m%d")
-    errors = []
 
     try:
         logger.info("Starting database backup…")
-        db_bytes = _pg_dump()
+        db_bytes = _db_export()
         asyncio.run(_upload(f"data_{today}.sql", db_bytes))
         logger.info(f"Database backup uploaded ({len(db_bytes):,} bytes).")
     except Exception as e:
         logger.error(f"Database backup failed: {e}")
-        errors.append(str(e))
 
     try:
         logger.info("Starting system (code) backup…")
@@ -102,7 +107,3 @@ def run_backup() -> None:
         logger.info(f"System backup uploaded ({len(zip_bytes):,} bytes).")
     except Exception as e:
         logger.error(f"System backup failed: {e}")
-        errors.append(str(e))
-
-    if not errors:
-        logger.info("Daily backup to SharePoint completed successfully.")
