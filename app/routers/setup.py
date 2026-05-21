@@ -4,21 +4,19 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import User
 from app.auth import hash_password
-import os
 
 router = APIRouter()
 
-SETUP_TOKEN = os.environ.get("SETUP_TOKEN", "")
-
 
 @router.post("/setup/create-admin")
-def create_admin(token: str, email: str, full_name: str, password: str):
-    if not SETUP_TOKEN or token != SETUP_TOKEN:
-        return JSONResponse({"error": "Invalid token"}, status_code=403)
+def create_admin(email: str, full_name: str, password: str):
     db: Session = SessionLocal()
     try:
+        admin_exists = db.query(User).filter(User.is_admin == True).first()
+        if admin_exists:
+            return JSONResponse({"error": "Admin already exists"}, status_code=400)
         if db.query(User).filter(User.email == email).first():
-            return JSONResponse({"error": "User already exists"}, status_code=400)
+            return JSONResponse({"error": "Email already in use"}, status_code=400)
         user = User(
             email=email.lower().strip(),
             full_name=full_name,
