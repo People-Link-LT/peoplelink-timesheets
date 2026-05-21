@@ -30,6 +30,8 @@ class User(Base):
     team_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("teams.id"), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_2fa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     team: Mapped["Team | None"] = relationship("Team", back_populates="users")

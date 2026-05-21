@@ -25,7 +25,7 @@
     {% endif %}
   </div>
   <div class="flex items-center gap-3 text-sm text-gray-500">
-    <span>{{ user.full_name }}</span>
+    <a href="/profile" class="hover:text-gray-800 {% if request.url.path.startswith('/profile') %}font-semibold text-gray-800{% endif %}">{{ user.full_name }}</a>
     <a href="/logout" class="text-red-500 hover:text-red-700">Sign out</a>
   </div>
 </nav>

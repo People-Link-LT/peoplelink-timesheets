@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models import User
 
 COOKIE_NAME = "ts_token"
+COOKIE_2FA = "ts_2fa_pending"
 
 
 def hash_password(password: str) -> str:
@@ -22,6 +23,21 @@ def verify_password(plain: str, hashed: str) -> bool:
 def create_access_token(user_id: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     return jwt.encode({"sub": user_id, "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
+
+
+def create_2fa_pending_token(user_id: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=5)
+    return jwt.encode({"sub": user_id, "type": "2fa", "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
+
+
+def verify_2fa_pending_token(token: str) -> Optional[str]:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        if payload.get("type") != "2fa":
+            return None
+        return payload.get("sub")
+    except JWTError:
+        return None
 
 
 def _get_user_from_request(request: Request, db: Session) -> Optional[User]:

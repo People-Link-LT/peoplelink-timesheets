@@ -6,7 +6,8 @@ from app.database import get_db
 from app.models import User
 from app.auth import (
     hash_password, verify_password, create_access_token,
-    get_optional_user, COOKIE_NAME
+    create_2fa_pending_token, verify_2fa_pending_token,
+    get_optional_user, COOKIE_NAME, COOKIE_2FA
 )
 
 router = APIRouter()
@@ -37,13 +38,50 @@ def login_submit(
     if error:
         return templates.TemplateResponse(request, "login.html", {"error": error})
 
+    if user.is_2fa_enabled:
+        pending_token = create_2fa_pending_token(user.id)
+        response = RedirectResponse("/login/2fa", status_code=302)
+        response.set_cookie(COOKIE_2FA, pending_token, httponly=True, samesite="lax", secure=True, max_age=300)
+        return response
+
     token = create_access_token(user.id)
     response = RedirectResponse("/timesheet", status_code=302)
-    response.set_cookie(
-        COOKIE_NAME, token,
-        httponly=True, samesite="lax", secure=True,
-        max_age=60 * 60 * 8,
-    )
+    response.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax", secure=True, max_age=60 * 60 * 8)
+    return response
+
+
+@router.get("/login/2fa", response_class=HTMLResponse)
+def login_2fa_page(request: Request):
+    pending = request.cookies.get(COOKIE_2FA)
+    if not pending or not verify_2fa_pending_token(pending):
+        return RedirectResponse("/login", status_code=302)
+    return templates.TemplateResponse(request, "login_2fa.html", {"error": None})
+
+
+@router.post("/login/2fa", response_class=HTMLResponse)
+def login_2fa_submit(
+    request: Request,
+    code: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    import pyotp
+    pending = request.cookies.get(COOKIE_2FA)
+    user_id = verify_2fa_pending_token(pending) if pending else None
+    if not user_id:
+        return RedirectResponse("/login", status_code=302)
+
+    user = db.get(User, user_id)
+    if not user or not user.totp_secret:
+        return RedirectResponse("/login", status_code=302)
+
+    totp = pyotp.TOTP(user.totp_secret)
+    if not totp.verify(code.strip(), valid_window=1):
+        return templates.TemplateResponse(request, "login_2fa.html", {"error": "Invalid code. Try again."})
+
+    token = create_access_token(user.id)
+    response = RedirectResponse("/timesheet", status_code=302)
+    response.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax", secure=True, max_age=60 * 60 * 8)
+    response.delete_cookie(COOKIE_2FA)
     return response
 
 
@@ -51,6 +89,7 @@ def login_submit(
 def logout():
     response = RedirectResponse("/login", status_code=302)
     response.delete_cookie(COOKIE_NAME)
+    response.delete_cookie(COOKIE_2FA)
     return response
 
 

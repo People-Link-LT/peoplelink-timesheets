@@ -9,7 +9,7 @@ from app.database import init_db, SessionLocal
 from app.scheduler import start_scheduler
 from app.invenias import fetch_active_assignments
 from app.models import Assignment
-from app.routers import auth, timesheet, portfolio, dashboard, admin
+from app.routers import auth, timesheet, portfolio, dashboard, admin, profile
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -59,6 +59,7 @@ app.include_router(timesheet.router)
 app.include_router(portfolio.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
+app.include_router(profile.router)
 
 
 @app.get("/")
