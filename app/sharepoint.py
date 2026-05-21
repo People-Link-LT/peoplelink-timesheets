@@ -16,7 +16,7 @@ async def _get_token(tenant_id: str, client_id: str, client_secret: str, usernam
             "client_secret": client_secret,
             "username": username,
             "password": password,
-            "scope": "https://graph.microsoft.com/Files.ReadWrite offline_access",
+            "scope": "https://graph.microsoft.com/Sites.ReadWrite.All offline_access",
         })
         resp.raise_for_status()
         return resp.json()["access_token"]
@@ -28,6 +28,8 @@ async def upload_file(
     client_secret: str,
     username: str,
     password: str,
+    site_hostname: str,
+    site_path: str,
     folder: str,
     filename: str,
     content: bytes,
@@ -37,8 +39,16 @@ async def upload_file(
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/octet-stream",
     }
-    upload_url = f"{_GRAPH}/me/drive/root:/{folder}/{filename}:/content"
     async with httpx.AsyncClient(timeout=120) as client:
+        # Resolve SharePoint site ID
+        site_resp = await client.get(
+            f"{_GRAPH}/sites/{site_hostname}:/{site_path}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        site_resp.raise_for_status()
+        site_id = site_resp.json()["id"]
+
+        upload_url = f"{_GRAPH}/sites/{site_id}/drive/root:/{folder}/{filename}:/content"
         resp = await client.put(upload_url, content=content, headers=headers)
         resp.raise_for_status()
-        logger.info(f"OneDrive upload OK: {folder}/{filename} ({len(content):,} bytes)")
+        logger.info(f"SharePoint upload OK: {folder}/{filename} ({len(content):,} bytes)")

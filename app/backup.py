@@ -64,6 +64,8 @@ async def _upload(filename: str, content: bytes) -> None:
         client_secret=settings.sharepoint_client_secret,
         username=settings.sharepoint_username,
         password=settings.sharepoint_password,
+        site_hostname=settings.sharepoint_site_hostname,
+        site_path=settings.sharepoint_site_path,
         folder=settings.sharepoint_backup_folder,
         filename=filename,
         content=content,
