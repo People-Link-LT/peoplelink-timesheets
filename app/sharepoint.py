@@ -18,6 +18,8 @@ async def _get_token(tenant_id: str, client_id: str, client_secret: str, usernam
             "password": password,
             "scope": "https://graph.microsoft.com/Sites.ReadWrite.All offline_access",
         })
+        if not resp.is_success:
+            logger.error(f"Token request failed {resp.status_code}: {resp.text}")
         resp.raise_for_status()
         return resp.json()["access_token"]
 
