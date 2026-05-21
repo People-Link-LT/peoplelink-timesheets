@@ -1,5 +1,5 @@
 from app.templates import templates
-from fastapi import APIRouter, Depends, Request, Form, HTTPException
+from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -17,7 +17,7 @@ def login_page(request: Request, db: Session = Depends(get_db)):
     user = get_optional_user(request, db)
     if user and user.is_approved:
         return RedirectResponse("/timesheet", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request, "login.html", {"error": None})
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -35,13 +35,13 @@ def login_submit(
         error = "Your account is pending admin approval."
 
     if error:
-        return templates.TemplateResponse("login.html", {"request": request, "error": error})
+        return templates.TemplateResponse(request, "login.html", {"error": error})
 
     token = create_access_token(user.id)
     response = RedirectResponse("/timesheet", status_code=302)
     response.set_cookie(
         COOKIE_NAME, token,
-        httponly=True, samesite="lax", secure=False,  # set secure=True behind HTTPS
+        httponly=True, samesite="lax", secure=True,
         max_age=60 * 60 * 8,
     )
     return response
@@ -56,7 +56,7 @@ def logout():
 
 @router.get("/register", response_class=HTMLResponse)
 def register_page(request: Request):
-    return templates.TemplateResponse("register.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request, "register.html", {"error": None})
 
 
 @router.post("/register", response_class=HTMLResponse)
@@ -70,14 +70,10 @@ def register_submit(
     email = email.lower().strip()
     if db.query(User).filter(User.email == email).first():
         return templates.TemplateResponse(
-            "register.html",
-            {"request": request, "error": "An account with this email already exists."}
+            request, "register.html",
+            {"error": "An account with this email already exists."}
         )
     user = User(email=email, full_name=full_name, password_hash=hash_password(password))
     db.add(user)
     db.commit()
-    return templates.TemplateResponse(
-        "register.html",
-        {"request": request, "error": None, "success": True}
-    )
-
+    return templates.TemplateResponse(request, "register.html", {"error": None, "success": True})

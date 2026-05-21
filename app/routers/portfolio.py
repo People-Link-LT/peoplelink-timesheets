@@ -1,5 +1,5 @@
 from app.templates import templates
-from fastapi import APIRouter, Depends, Request, Form, HTTPException
+from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -18,8 +18,7 @@ def portfolio_page(request: Request, db: Session = Depends(get_db), user: User =
         .order_by(Assignment.reference_number)
         .all()
     )
-    return templates.TemplateResponse("portfolio.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "portfolio.html", {
         "user": user,
         "all_assignments": all_assignments,
         "portfolio_ids": portfolio_ids,
@@ -28,7 +27,6 @@ def portfolio_page(request: Request, db: Session = Depends(get_db), user: User =
 
 @router.post("/add")
 def add_to_portfolio(
-    request: Request,
     assignment_id: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -42,7 +40,6 @@ def add_to_portfolio(
 
 @router.post("/remove")
 def remove_from_portfolio(
-    request: Request,
     assignment_id: str = Form(...),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -50,4 +47,3 @@ def remove_from_portfolio(
     db.query(UserPortfolio).filter_by(user_id=user.id, assignment_id=assignment_id).delete()
     db.commit()
     return RedirectResponse("/portfolio", status_code=302)
-

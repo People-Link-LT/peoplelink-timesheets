@@ -14,8 +14,8 @@ router = APIRouter(prefix="/admin")
 def admin_users(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     users = db.query(User).order_by(User.full_name).all()
     teams = db.query(Team).order_by(Team.name).all()
-    return templates.TemplateResponse("admin/users.html", {
-        "request": request, "user": admin, "users": users, "teams": teams
+    return templates.TemplateResponse(request, "admin/users.html", {
+        "user": admin, "users": users, "teams": teams
     })
 
 
@@ -90,8 +90,8 @@ def delete_user(user_id: str, db: Session = Depends(get_db), admin: User = Depen
 @router.get("/teams", response_class=HTMLResponse)
 def admin_teams(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     teams = db.query(Team).order_by(Team.name).all()
-    return templates.TemplateResponse("admin/teams.html", {
-        "request": request, "user": admin, "teams": teams
+    return templates.TemplateResponse(request, "admin/teams.html", {
+        "user": admin, "teams": teams
     })
 
 
@@ -115,4 +115,3 @@ def delete_team(team_id: str, db: Session = Depends(get_db), admin: User = Depen
 def manual_sync(admin: User = Depends(get_current_admin)):
     sync_assignments()
     return RedirectResponse("/admin/users", status_code=302)
-

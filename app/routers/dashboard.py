@@ -15,7 +15,6 @@ router = APIRouter(prefix="/dashboard")
 def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     week = get_or_create_week(db)
 
-    # Total minutes per assignment this week
     project_totals = (
         db.query(
             Assignment.reference_number,
@@ -38,7 +37,6 @@ def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depe
         .all()
     )
 
-    # Per-user totals grouped by team
     user_totals_raw = (
         db.query(
             Team.name.label("team_name"),
@@ -59,22 +57,16 @@ def dashboard(request: Request, db: Session = Depends(get_db), user: User = Depe
         .all()
     )
 
-    # Group into teams dict
     teams: dict[str, list] = {}
     for row in user_totals_raw:
         team_key = row.team_name or "No Team"
         if team_key not in teams:
             teams[team_key] = []
-        teams[team_key].append({
-            "name": row.full_name,
-            "total_minutes": row.total_minutes,
-        })
+        teams[team_key].append({"name": row.full_name, "total_minutes": row.total_minutes})
 
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "dashboard.html", {
         "user": user,
         "week": week,
         "project_totals": project_totals,
         "teams": teams,
     })
-

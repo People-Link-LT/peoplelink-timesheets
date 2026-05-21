@@ -1,6 +1,6 @@
 from app.templates import templates
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_user
@@ -27,8 +27,7 @@ def timesheet_page(request: Request, db: Session = Depends(get_db), user: User =
     week = get_or_create_week(db)
     entries = _get_entries(db, user.id, week.id)
     portfolio_assignments = [p.assignment for p in user.portfolio]
-    return templates.TemplateResponse("timesheet.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "timesheet.html", {
         "user": user,
         "week": week,
         "entries": entries,
@@ -63,10 +62,8 @@ def add_row(
         db.commit()
         db.refresh(entry)
 
-    return templates.TemplateResponse("partials/entry_row.html", {
-        "request": request,
-        "entry": entry,
-        "days": DAYS,
+    return templates.TemplateResponse(request, "partials/entry_row.html", {
+        "entry": entry, "days": DAYS,
     })
 
 
@@ -87,10 +84,8 @@ def update_entry(
     setattr(entry, f"{day}_minutes", max(0, minutes))
     db.commit()
     db.refresh(entry)
-    return templates.TemplateResponse("partials/entry_cell.html", {
-        "request": request,
-        "entry": entry,
-        "day": day,
+    return templates.TemplateResponse(request, "partials/entry_cell.html", {
+        "entry": entry, "day": day,
     })
 
 
@@ -117,9 +112,8 @@ def copy_last_week(
     last_week = get_week_by_offset(db, offset=-1)
     if not last_week:
         entries = _get_entries(db, user.id, current_week.id)
-        return templates.TemplateResponse("partials/entries_tbody.html", {
-            "request": request, "entries": entries, "days": DAYS,
-            "notice": "No data found from last week."
+        return templates.TemplateResponse(request, "partials/entries_tbody.html", {
+            "entries": entries, "days": DAYS, "notice": "No data found from last week."
         })
 
     last_entries = _get_entries(db, user.id, last_week.id)
@@ -143,8 +137,7 @@ def copy_last_week(
     db.commit()
 
     entries = _get_entries(db, user.id, current_week.id)
-    return templates.TemplateResponse("partials/entries_tbody.html", {
-        "request": request, "entries": entries, "days": DAYS,
+    return templates.TemplateResponse(request, "partials/entries_tbody.html", {
+        "entries": entries, "days": DAYS,
         "notice": f"Copied {len(last_entries)} rows from last week."
     })
-
