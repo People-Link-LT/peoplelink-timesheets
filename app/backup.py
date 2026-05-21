@@ -62,8 +62,8 @@ async def _upload(filename: str, content: bytes) -> None:
         tenant_id=settings.sharepoint_tenant_id,
         client_id=settings.sharepoint_client_id,
         client_secret=settings.sharepoint_client_secret,
-        site_hostname=settings.sharepoint_site_hostname,
-        site_path=settings.sharepoint_site_path,
+        username=settings.sharepoint_username,
+        password=settings.sharepoint_password,
         folder=settings.sharepoint_backup_folder,
         filename=filename,
         content=content,
@@ -75,7 +75,8 @@ def run_backup() -> None:
         settings.sharepoint_tenant_id,
         settings.sharepoint_client_id,
         settings.sharepoint_client_secret,
-        settings.sharepoint_site_hostname,
+        settings.sharepoint_username,
+        settings.sharepoint_password,
     ]):
         logger.warning("SharePoint backup skipped: credentials not configured.")
         return

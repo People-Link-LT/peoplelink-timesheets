@@ -7,14 +7,16 @@ _TOKEN_URL = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
 _GRAPH = "https://graph.microsoft.com/v1.0"
 
 
-async def _get_token(tenant_id: str, client_id: str, client_secret: str) -> str:
+async def _get_token(tenant_id: str, client_id: str, client_secret: str, username: str, password: str) -> str:
     url = _TOKEN_URL.format(tenant_id=tenant_id)
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(url, data={
-            "grant_type": "client_credentials",
+            "grant_type": "password",
             "client_id": client_id,
             "client_secret": client_secret,
-            "scope": "https://graph.microsoft.com/.default",
+            "username": username,
+            "password": password,
+            "scope": "https://graph.microsoft.com/Files.ReadWrite offline_access",
         })
         resp.raise_for_status()
         return resp.json()["access_token"]
@@ -24,27 +26,19 @@ async def upload_file(
     tenant_id: str,
     client_id: str,
     client_secret: str,
-    site_hostname: str,
-    site_path: str,
+    username: str,
+    password: str,
     folder: str,
     filename: str,
     content: bytes,
 ) -> None:
-    token = await _get_token(tenant_id, client_id, client_secret)
+    token = await _get_token(tenant_id, client_id, client_secret, username, password)
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/octet-stream",
     }
+    upload_url = f"{_GRAPH}/me/drive/root:/{folder}/{filename}:/content"
     async with httpx.AsyncClient(timeout=120) as client:
-        # Resolve site ID from hostname + path
-        site_resp = await client.get(
-            f"{_GRAPH}/sites/{site_hostname}:/{site_path}",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        site_resp.raise_for_status()
-        site_id = site_resp.json()["id"]
-
-        upload_url = f"{_GRAPH}/sites/{site_id}/drive/root:/{folder}/{filename}:/content"
         resp = await client.put(upload_url, content=content, headers=headers)
         resp.raise_for_status()
-        logger.info(f"SharePoint upload OK: {folder}/{filename} ({len(content):,} bytes)")
+        logger.info(f"OneDrive upload OK: {folder}/{filename} ({len(content):,} bytes)")
