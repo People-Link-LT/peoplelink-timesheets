@@ -47,6 +47,9 @@ def add_row(
 ):
     if task not in TASK_CHOICES:
         raise HTTPException(400, "Invalid task")
+    portfolio_ids = {p.assignment_id for p in user.portfolio}
+    if assignment_id not in portfolio_ids:
+        raise HTTPException(403, "Assignment not in your portfolio")
     week = get_or_create_week(db)
 
     existing = db.query(TimesheetEntry).filter_by(

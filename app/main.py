@@ -1,24 +1,29 @@
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
 from app.database import init_db, SessionLocal
-from app.scheduler import start_scheduler
 from app.invenias import fetch_active_assignments
 from app.models import Assignment
 from app.routers import auth, timesheet, portfolio, dashboard, admin, profile
+from app.scheduler import start_scheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # Async startup sync
     try:
         items = await fetch_active_assignments()
         db = SessionLocal()
@@ -52,6 +57,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="PeopleLink Timesheets", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(auth.router)
@@ -60,6 +67,18 @@ app.include_router(portfolio.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
 app.include_router(profile.router)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next) -> Response:
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 @app.get("/")

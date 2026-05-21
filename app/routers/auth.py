@@ -4,6 +4,10 @@ from datetime import datetime, timezone, timedelta
 import pyotp
 from app.templates import templates
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Form
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -19,7 +23,7 @@ router = APIRouter()
 
 def _set_auth_cookie(response, user_id: str):
     token = create_access_token(user_id)
-    response.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax", secure=True, max_age=60 * 60 * 8)
+    response.set_cookie(COOKIE_NAME, token, httponly=True, samesite="lax", secure=True, max_age=60 * 120)
 
 
 def _send_email_otp(user: User, db: Session, background_tasks: BackgroundTasks) -> None:
@@ -40,6 +44,7 @@ def login_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_class=HTMLResponse)
+@limiter.limit("10/minute")
 def login_submit(
     request: Request,
     background_tasks: BackgroundTasks,

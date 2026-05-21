@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     database_url: str
     secret_key: str
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 480  # 8 hours
+    access_token_expire_minutes: int = 120  # 2 hours
 
     invenias_client_id: str
     invenias_client_secret: str
