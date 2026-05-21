@@ -14,6 +14,12 @@
     </div>
   </div>
 
+  {% if request.query_params.get('setup_2fa') %}
+  <div class="bg-amber-50 border border-amber-300 text-amber-800 rounded-2xl px-5 py-4 mb-6 text-sm font-medium">
+    Two-factor authentication is required to access PeopleLink Timesheets. Please set it up below before continuing.
+  </div>
+  {% endif %}
+
   <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-sm font-semibold text-gray-700">Two-Factor Authentication</h2>

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.auth import get_current_user
+from app.auth import get_current_user_2fa_exempt as get_current_user
 from app.models import User
 
 router = APIRouter(prefix="/profile")

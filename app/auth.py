@@ -58,6 +58,16 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     user = _get_user_from_request(request, db)
     if not user or not user.is_approved:
         raise HTTPException(status_code=status.HTTP_302_FOUND, headers={"Location": "/login"})
+    if not user.is_2fa_enabled:
+        raise HTTPException(status_code=status.HTTP_302_FOUND, headers={"Location": "/profile?setup_2fa=1"})
+    return user
+
+
+def get_current_user_2fa_exempt(request: Request, db: Session = Depends(get_db)) -> User:
+    """For profile/setup routes — only requires login and approval, not 2FA."""
+    user = _get_user_from_request(request, db)
+    if not user or not user.is_approved:
+        raise HTTPException(status_code=status.HTTP_302_FOUND, headers={"Location": "/login"})
     return user
 
 
