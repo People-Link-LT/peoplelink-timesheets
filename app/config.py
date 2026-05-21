@@ -13,6 +13,13 @@ class Settings(BaseSettings):
     invenias_username: str
     invenias_password: str
 
+    # Email / SMTP (optional — email OTP skipped if not configured)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+
     # SharePoint backup (optional — backup job skips if empty)
     sharepoint_tenant_id: str = ""
     sharepoint_client_id: str = ""

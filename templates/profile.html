@@ -14,12 +14,15 @@
     </div>
   </div>
 
-  <!-- 2FA Section -->
   <div class="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
     <div class="flex items-center justify-between mb-4">
       <h2 class="text-sm font-semibold text-gray-700">Two-Factor Authentication</h2>
       {% if user.is_2fa_enabled %}
-      <span class="text-xs bg-green-100 text-green-700 font-medium px-2 py-0.5 rounded-full">Enabled</span>
+        {% if user.twofa_method == "email" %}
+        <span class="text-xs bg-green-100 text-green-700 font-medium px-2 py-0.5 rounded-full">Email OTP</span>
+        {% else %}
+        <span class="text-xs bg-green-100 text-green-700 font-medium px-2 py-0.5 rounded-full">Authenticator App</span>
+        {% endif %}
       {% else %}
       <span class="text-xs bg-gray-100 text-gray-500 font-medium px-2 py-0.5 rounded-full">Disabled</span>
       {% endif %}
@@ -32,44 +35,82 @@
     <div class="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-3 text-sm mb-4">{{ success }}</div>
     {% endif %}
 
-    {% if not user.is_2fa_enabled and not qr %}
-    <p class="text-sm text-gray-500 mb-4">Add an extra layer of security. You'll need an authenticator app (Microsoft Authenticator, Google Authenticator, or Authy).</p>
-    <form method="post" action="/profile/2fa/setup">
-      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
-        Set up 2FA
-      </button>
-    </form>
+    {# ── Not enabled, no setup in progress ── #}
+    {% if not user.is_2fa_enabled and not setup_method and not qr %}
+    <p class="text-sm text-gray-500 mb-5">Choose how you'd like to verify your identity at login.</p>
+    <div class="grid grid-cols-2 gap-3">
+      <form method="post" action="/profile/2fa/setup">
+        <input type="hidden" name="method" value="totp">
+        <button type="submit" class="w-full border border-gray-300 rounded-xl p-4 text-left hover:border-blue-400 hover:bg-blue-50 transition">
+          <div class="font-semibold text-sm text-gray-800 mb-1">Authenticator App</div>
+          <div class="text-xs text-gray-500">Use Microsoft Authenticator, Google Authenticator, or Authy.</div>
+        </button>
+      </form>
+      <form method="post" action="/profile/2fa/setup">
+        <input type="hidden" name="method" value="email">
+        <button type="submit" class="w-full border border-gray-300 rounded-xl p-4 text-left hover:border-blue-400 hover:bg-blue-50 transition">
+          <div class="font-semibold text-sm text-gray-800 mb-1">Email Code</div>
+          <div class="text-xs text-gray-500">Receive a one-time code at {{ user.email }} each login.</div>
+        </button>
+      </form>
+    </div>
     {% endif %}
 
-    {% if qr %}
+    {# ── TOTP QR setup ── #}
+    {% if qr and setup_method == "totp" %}
     <p class="text-sm text-gray-600 mb-4">Scan this QR code with your authenticator app, then enter the 6-digit code to confirm.</p>
     <div class="flex justify-center mb-4">
       <img src="data:image/png;base64,{{ qr }}" alt="QR Code" class="w-48 h-48 border border-gray-200 rounded-lg">
     </div>
-    <p class="text-xs text-gray-400 text-center mb-4">Can't scan? Enter this code manually: <code class="bg-gray-100 px-1 py-0.5 rounded text-gray-700">{{ secret }}</code></p>
+    <p class="text-xs text-gray-400 text-center mb-4">Can't scan? Enter manually: <code class="bg-gray-100 px-1 py-0.5 rounded text-gray-700 select-all">{{ secret }}</code></p>
     <form method="post" action="/profile/2fa/enable" class="space-y-3">
+      <input type="hidden" name="method" value="totp">
       <input type="hidden" name="secret" value="{{ secret }}">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Verification code</label>
-        <input type="text" name="code" required autofocus autocomplete="one-time-code"
-          inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="000000"
-          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500">
-      </div>
+      <input type="text" name="code" required autofocus autocomplete="one-time-code"
+        inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="Enter 6-digit code"
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500">
       <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
         Enable 2FA
       </button>
     </form>
     {% endif %}
 
-    {% if user.is_2fa_enabled and not qr %}
-    <p class="text-sm text-gray-500 mb-4">2FA is active on your account. Enter your authenticator code below to disable it.</p>
-    <form method="post" action="/profile/2fa/disable" class="space-y-3">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Authenticator code</label>
-        <input type="text" name="code" required autocomplete="one-time-code"
-          inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="000000"
-          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500">
-      </div>
+    {# ── Email OTP setup ── #}
+    {% if setup_method == "email" and not qr %}
+    <p class="text-sm text-gray-600 mb-4">We've sent a verification code to <strong>{{ user.email }}</strong>. Enter it below to enable email 2FA.</p>
+    <form method="post" action="/profile/2fa/enable" class="space-y-3">
+      <input type="hidden" name="method" value="email">
+      <input type="hidden" name="secret" value="">
+      <input type="text" name="code" required autofocus autocomplete="one-time-code"
+        inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="Enter 6-digit code"
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition">
+        Enable 2FA
+      </button>
+    </form>
+    {% endif %}
+
+    {# ── Enabled — disable section ── #}
+    {% if user.is_2fa_enabled and not setup_method and not qr %}
+    <p class="text-sm text-gray-500 mb-4">
+      {% if user.twofa_method == "email" %}
+      You receive a code at <strong>{{ user.email }}</strong> each time you log in.
+      {% else %}
+      You use an authenticator app to log in.
+      {% endif %}
+    </p>
+
+    {% if user.twofa_method == "email" %}
+    <form method="post" action="/profile/2fa/send-code" class="mb-3">
+      <button type="submit" class="text-sm text-blue-600 hover:underline">Send a code to my email</button>
+    </form>
+    {% endif %}
+
+    <form method="post" action="/profile/2fa/disable" class="space-y-3 border-t border-gray-100 pt-4 mt-4">
+      <p class="text-xs text-gray-400">To disable 2FA, enter your current verification code.</p>
+      <input type="text" name="code" required autocomplete="one-time-code"
+        inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="Enter code to disable"
+        class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-red-400">
       <button type="submit" class="bg-red-100 hover:bg-red-200 text-red-700 text-sm font-semibold px-4 py-2 rounded-lg transition">
         Disable 2FA
       </button>

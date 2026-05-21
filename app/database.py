@@ -26,7 +26,10 @@ def init_db():
     with engine.connect() as conn:
         for col, definition in [
             ("is_2fa_enabled", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("twofa_method", "VARCHAR(10)"),
             ("totp_secret", "VARCHAR(64)"),
+            ("email_otp", "VARCHAR(6)"),
+            ("email_otp_expires_at", "TIMESTAMP"),
         ]:
             try:
                 conn.execute(text(f'ALTER TABLE users ADD COLUMN {col} {definition}'))

@@ -31,7 +31,10 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     is_2fa_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    twofa_method: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "totp" or "email"
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    email_otp: Mapped[str | None] = mapped_column(String(6), nullable=True)
+    email_otp_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     team: Mapped["Team | None"] = relationship("Team", back_populates="users")

@@ -25,17 +25,17 @@ def create_access_token(user_id: str) -> str:
     return jwt.encode({"sub": user_id, "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
 
 
-def create_2fa_pending_token(user_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=5)
-    return jwt.encode({"sub": user_id, "type": "2fa", "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
+def create_2fa_pending_token(user_id: str, method: str = "totp") -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=10)
+    return jwt.encode({"sub": user_id, "type": "2fa", "method": method, "exp": expire}, settings.secret_key, algorithm=settings.algorithm)
 
 
-def verify_2fa_pending_token(token: str) -> Optional[str]:
+def verify_2fa_pending_token(token: str) -> Optional[dict]:
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         if payload.get("type") != "2fa":
             return None
-        return payload.get("sub")
+        return {"user_id": payload.get("sub"), "method": payload.get("method", "totp")}
     except JWTError:
         return None
 

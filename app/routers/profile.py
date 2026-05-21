@@ -1,5 +1,7 @@
 import base64
 import io
+import random
+from datetime import datetime, timezone, timedelta
 
 import pyotp
 import qrcode
@@ -14,50 +16,93 @@ from app.models import User
 router = APIRouter(prefix="/profile")
 
 
+def _ctx(user, **kwargs):
+    return {"user": user, "qr": None, "secret": None, "error": None, "success": None, "setup_method": None, **kwargs}
+
+
+def _send_email_otp(user: User, db: Session) -> None:
+    from app.email import send_otp_email
+    code = str(random.randint(100000, 999999))
+    user.email_otp = code
+    user.email_otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+    db.commit()
+    send_otp_email(user.email, user.full_name, code)
+
+
 @router.get("", response_class=HTMLResponse)
 def profile_page(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return templates.TemplateResponse(request, "profile.html", {"user": user, "qr": None, "secret": None, "error": None, "success": None})
+    return templates.TemplateResponse(request, "profile.html", _ctx(user))
 
 
 @router.post("/2fa/setup", response_class=HTMLResponse)
-def setup_2fa(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    secret = pyotp.random_base32()
-    totp = pyotp.TOTP(secret)
-    uri = totp.provisioning_uri(name=user.email, issuer_name="PeopleLink Timesheets")
-    img = qrcode.make(uri)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    qr_b64 = base64.b64encode(buf.getvalue()).decode()
-    return templates.TemplateResponse(request, "profile.html", {
-        "user": user, "qr": qr_b64, "secret": secret, "error": None, "success": None
-    })
+def setup_2fa(
+    request: Request,
+    method: str = Form(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if method == "totp":
+        secret = pyotp.random_base32()
+        uri = pyotp.TOTP(secret).provisioning_uri(name=user.email, issuer_name="PeopleLink Timesheets")
+        img = qrcode.make(uri)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        qr_b64 = base64.b64encode(buf.getvalue()).decode()
+        return templates.TemplateResponse(request, "profile.html", _ctx(user, qr=qr_b64, secret=secret, setup_method="totp"))
+
+    elif method == "email":
+        try:
+            _send_email_otp(db.get(User, user.id), db)
+            return templates.TemplateResponse(request, "profile.html", _ctx(user, setup_method="email"))
+        except Exception as e:
+            return templates.TemplateResponse(request, "profile.html", _ctx(user, error=f"Could not send email: {e}"))
 
 
 @router.post("/2fa/enable", response_class=HTMLResponse)
 def enable_2fa(
     request: Request,
     code: str = Form(...),
-    secret: str = Form(...),
+    method: str = Form(...),
+    secret: str = Form(""),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    totp = pyotp.TOTP(secret)
-    if not totp.verify(code.strip(), valid_window=1):
-        img = qrcode.make(totp.provisioning_uri(name=user.email, issuer_name="PeopleLink Timesheets"))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        qr_b64 = base64.b64encode(buf.getvalue()).decode()
-        return templates.TemplateResponse(request, "profile.html", {
-            "user": user, "qr": qr_b64, "secret": secret,
-            "error": "Invalid code. Make sure your authenticator is synced and try again.", "success": None
-        })
     db_user = db.get(User, user.id)
-    db_user.totp_secret = secret
+    valid = False
+
+    if method == "totp" and secret:
+        valid = pyotp.TOTP(secret).verify(code.strip(), valid_window=1)
+        if valid:
+            db_user.totp_secret = secret
+    elif method == "email" and db_user.email_otp:
+        now = datetime.now(timezone.utc)
+        expires = db_user.email_otp_expires_at
+        if expires and expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        valid = code.strip() == db_user.email_otp and now < expires
+        if valid:
+            db_user.email_otp = None
+            db_user.email_otp_expires_at = None
+
+    if not valid:
+        if method == "totp" and secret:
+            uri = pyotp.TOTP(secret).provisioning_uri(name=user.email, issuer_name="PeopleLink Timesheets")
+            img = qrcode.make(uri)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            qr_b64 = base64.b64encode(buf.getvalue()).decode()
+            return templates.TemplateResponse(request, "profile.html", _ctx(
+                user, qr=qr_b64, secret=secret, setup_method="totp",
+                error="Invalid code. Make sure your authenticator is synced and try again."
+            ))
+        return templates.TemplateResponse(request, "profile.html", _ctx(
+            user, setup_method=method, error="Invalid or expired code. Try again."
+        ))
+
     db_user.is_2fa_enabled = True
+    db_user.twofa_method = method
     db.commit()
-    return templates.TemplateResponse(request, "profile.html", {
-        "user": db_user, "qr": None, "secret": None, "error": None, "success": "2FA enabled successfully."
-    })
+    return templates.TemplateResponse(request, "profile.html", _ctx(db_user, success="2FA enabled successfully."))
 
 
 @router.post("/2fa/disable", response_class=HTMLResponse)
@@ -67,18 +112,49 @@ def disable_2fa(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not user.is_2fa_enabled or not user.totp_secret:
-        return RedirectResponse("/profile", status_code=302)
-    totp = pyotp.TOTP(user.totp_secret)
-    if not totp.verify(code.strip(), valid_window=1):
-        return templates.TemplateResponse(request, "profile.html", {
-            "user": user, "qr": None, "secret": None,
-            "error": "Invalid code. 2FA was not disabled.", "success": None
-        })
     db_user = db.get(User, user.id)
+    if not db_user.is_2fa_enabled:
+        return RedirectResponse("/profile", status_code=302)
+
+    method = db_user.twofa_method or "totp"
+    valid = False
+
+    if method == "totp" and db_user.totp_secret:
+        valid = pyotp.TOTP(db_user.totp_secret).verify(code.strip(), valid_window=1)
+    elif method == "email" and db_user.email_otp:
+        now = datetime.now(timezone.utc)
+        expires = db_user.email_otp_expires_at
+        if expires and expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        valid = code.strip() == db_user.email_otp and now < expires
+
+    if not valid:
+        return templates.TemplateResponse(request, "profile.html", _ctx(
+            db_user, error="Invalid code. 2FA was not disabled."
+        ))
+
     db_user.is_2fa_enabled = False
+    db_user.twofa_method = None
     db_user.totp_secret = None
+    db_user.email_otp = None
+    db_user.email_otp_expires_at = None
     db.commit()
-    return templates.TemplateResponse(request, "profile.html", {
-        "user": db_user, "qr": None, "secret": None, "error": None, "success": "2FA disabled."
-    })
+    return templates.TemplateResponse(request, "profile.html", _ctx(db_user, success="2FA has been disabled."))
+
+
+@router.post("/2fa/send-code", response_class=HTMLResponse)
+def send_disable_code(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    db_user = db.get(User, user.id)
+    if db_user.is_2fa_enabled and db_user.twofa_method == "email":
+        try:
+            _send_email_otp(db_user, db)
+            return templates.TemplateResponse(request, "profile.html", _ctx(
+                db_user, success="A code has been sent to your email."
+            ))
+        except Exception as e:
+            return templates.TemplateResponse(request, "profile.html", _ctx(db_user, error=f"Could not send email: {e}"))
+    return RedirectResponse("/profile", status_code=302)
