@@ -124,6 +124,13 @@ def manual_sync(admin: User = Depends(get_current_admin)):
     return RedirectResponse("/admin/users", status_code=302)
 
 
+@router.post("/backup-now")
+def manual_backup(admin: User = Depends(get_current_admin)):
+    from app.backup import run_backup
+    run_backup()
+    return RedirectResponse("/admin/users", status_code=302)
+
+
 @router.get("/backup/download")
 def download_backup(admin: User = Depends(get_current_admin)):
     url = urlparse(settings.database_url)
