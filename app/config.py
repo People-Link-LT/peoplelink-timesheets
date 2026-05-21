@@ -13,12 +13,9 @@ class Settings(BaseSettings):
     invenias_username: str
     invenias_password: str
 
-    # Email / SMTP (optional — email OTP skipped if not configured)
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_username: str = ""
-    smtp_password: str = ""
-    smtp_from: str = ""
+    # Email — sent via Microsoft Graph using the SharePoint app credentials
+    smtp_from: str = ""      # M365 address to send from, e.g. matas@peoplelink.lt
+    smtp_username: str = ""  # fallback alias for smtp_from
 
     # SharePoint backup (optional — backup job skips if empty)
     sharepoint_tenant_id: str = ""

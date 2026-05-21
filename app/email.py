@@ -1,29 +1,58 @@
 import logging
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import httpx
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+_TOKEN_URL = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+_GRAPH = "https://graph.microsoft.com/v1.0"
+
+
+async def _get_token() -> str:
+    url = _TOKEN_URL.format(tenant_id=settings.sharepoint_tenant_id)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(url, data={
+            "grant_type": "client_credentials",
+            "client_id": settings.sharepoint_client_id,
+            "client_secret": settings.sharepoint_client_secret,
+            "scope": "https://graph.microsoft.com/.default",
+        })
+        resp.raise_for_status()
+        return resp.json()["access_token"]
+
+
+async def _send_via_graph(to_email: str, subject: str, html: str, text: str) -> None:
+    token = await _get_token()
+    send_as = settings.smtp_from or settings.smtp_username
+    payload = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": "HTML", "content": html},
+            "toRecipients": [{"emailAddress": {"address": to_email}}],
+        },
+        "saveToSentItems": False,
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"{_GRAPH}/users/{send_as}/sendMail",
+            json=payload,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        if not resp.is_success:
+            logger.error(f"Graph sendMail failed {resp.status_code}: {resp.text}")
+        resp.raise_for_status()
+
 
 def send_otp_email(to_email: str, full_name: str, code: str) -> None:
-    if not settings.smtp_host:
-        logger.warning("SMTP not configured — cannot send OTP email.")
+    from app.config import settings as s
+    import asyncio
+
+    if not all([s.sharepoint_tenant_id, s.sharepoint_client_id, s.sharepoint_client_secret, s.smtp_from or s.smtp_username]):
+        logger.warning("Microsoft Graph email not configured — skipping OTP send.")
         return
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"{code} is your PeopleLink Timesheets login code"
-    msg["From"] = settings.smtp_from or settings.smtp_username
-    msg["To"] = to_email
-
-    text = (
-        f"Hi {full_name},\n\n"
-        f"Your login code is: {code}\n\n"
-        f"This code expires in 10 minutes. Do not share it.\n\n"
-        f"PeopleLink Timesheets"
-    )
+    subject = f"{code} is your PeopleLink Timesheets login code"
     html = f"""
     <div style="font-family:sans-serif;max-width:420px;margin:0 auto;padding:24px">
       <p style="color:#1d4ed8;font-weight:700;font-size:18px;margin-bottom:4px">PeopleLink Timesheets</p>
@@ -33,16 +62,13 @@ def send_otp_email(to_email: str, full_name: str, code: str) -> None:
                   padding:20px;background:#f3f4f6;border-radius:10px;margin:20px 0;color:#111827">
         {code}
       </div>
-      <p style="color:#6b7280;font-size:13px">Expires in 10 minutes. Never share this code with anyone.</p>
+      <p style="color:#6b7280;font-size:13px">Expires in 10 minutes. Never share this code.</p>
     </div>
     """
-    msg.attach(MIMEText(text, "plain"))
-    msg.attach(MIMEText(html, "html"))
+    text = f"Hi {full_name},\n\nYour login code is: {code}\n\nExpires in 10 minutes.\n\nPeopleLink Timesheets"
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(settings.smtp_username, settings.smtp_password)
-        server.send_message(msg)
-
-    logger.info(f"OTP email sent to {to_email}")
+    try:
+        asyncio.run(_send_via_graph(to_email, subject, html, text))
+        logger.info(f"OTP email sent to {to_email}")
+    except Exception as e:
+        logger.error(f"Failed to send OTP email to {to_email}: {e}")
