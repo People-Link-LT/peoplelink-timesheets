@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -7,7 +8,7 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from app.database import init_db, SessionLocal
 from app.invenias import fetch_active_assignments
-from app.models import Assignment
+from app.models import Assignment, KnowledgeChunk
 from app.routers import auth, timesheet, portfolio, dashboard, admin, profile, setup, documents, ask
 from app.scheduler import start_scheduler
 
@@ -46,6 +47,19 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Startup Invenias sync failed: {e}")
     start_scheduler()
+
+    # Auto-index on first startup if knowledge base is empty
+    try:
+        db = SessionLocal()
+        chunk_count = db.query(KnowledgeChunk).count()
+        db.close()
+        if chunk_count == 0:
+            logger.info("Knowledge base empty — triggering initial indexing in background.")
+            from app.indexer import run_indexing_sync
+            threading.Thread(target=run_indexing_sync, daemon=True).start()
+    except Exception as e:
+        logger.error(f"Startup indexing check failed: {e}")
+
     yield
 
 
