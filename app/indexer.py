@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 800      # words per chunk
 CHUNK_OVERLAP = 100   # word overlap between chunks
+INVENIAS_SUBDOMAIN = "peoplelink"
 
 
 def _chunk_text(text: str) -> list[str]:
@@ -29,12 +30,17 @@ def _chunk_text(text: str) -> list[str]:
     return chunks
 
 
+def _assignment_url(item_id: str) -> str:
+    return f"https://{INVENIAS_SUBDOMAIN}.invenias.com/a/assignments/{item_id}"
+
+
 def _assignment_text(a: Assignment) -> str:
     return (
         f"Assignment Reference: {a.reference_number}\n"
         f"Company: {a.company_name or 'Unknown'}\n"
         f"Role / Title: {a.title or 'Unknown'}\n"
-        f"Status: {a.status}"
+        f"Status: {a.status}\n"
+        f"Invenias URL: {_assignment_url(a.id)}"
     )
 
 
@@ -58,9 +64,11 @@ async def _index_assignments(db: Session) -> int:
             )
         ).scalar_one_or_none()
 
+        url = _assignment_url(assignment.id)
         if existing:
             existing.content = content
             existing.source_name = assignment.display_name
+            existing.source_url = url
             existing.embedding = embedding
             existing.indexed_at = now
         else:
@@ -68,6 +76,7 @@ async def _index_assignments(db: Session) -> int:
                 source_type="invenias",
                 source_id=assignment.id,
                 source_name=assignment.display_name,
+                source_url=url,
                 content=content,
                 embedding=embedding,
                 indexed_at=now,
