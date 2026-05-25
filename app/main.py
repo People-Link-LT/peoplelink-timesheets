@@ -48,17 +48,13 @@ async def lifespan(app: FastAPI):
         logger.error(f"Startup Invenias sync failed: {e}")
     start_scheduler()
 
-    # Auto-index on first startup if knowledge base is empty
+    # Re-index on every startup so new drives and document changes are always picked up
     try:
-        db = SessionLocal()
-        chunk_count = db.query(KnowledgeChunk).count()
-        db.close()
-        if chunk_count == 0:
-            logger.info("Knowledge base empty — triggering initial indexing in background.")
-            from app.indexer import run_indexing_sync
-            threading.Thread(target=run_indexing_sync, daemon=True).start()
+        logger.info("Triggering background re-index on startup.")
+        from app.indexer import run_indexing_sync
+        threading.Thread(target=run_indexing_sync, daemon=True).start()
     except Exception as e:
-        logger.error(f"Startup indexing check failed: {e}")
+        logger.error(f"Startup indexing failed: {e}")
 
     yield
 
