@@ -3,7 +3,6 @@ import json
 import logging
 from typing import AsyncGenerator
 
-import anthropic
 from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,13 +20,10 @@ When multiple documents cover the same topic, prefer the most recent one.
 Be concise and professional. For list-style questions, use bullet points."""
 
 EMBEDDING_MODEL = "text-embedding-3-small"
-EMBEDDING_DIMS = 1536
-CHAT_MODEL = "claude-haiku-4-5-20251001"
+CHAT_MODEL = "gpt-4o-mini"
 TOP_K = 15
 
-# Singleton clients — avoids creating new connection pools per request
 _openai: AsyncOpenAI | None = None
-_anthropic: anthropic.AsyncAnthropic | None = None
 
 
 def _get_openai() -> AsyncOpenAI:
@@ -35,21 +31,6 @@ def _get_openai() -> AsyncOpenAI:
     if _openai is None:
         _openai = AsyncOpenAI(api_key=settings.openai_api_key)
     return _openai
-
-
-def _get_anthropic() -> anthropic.AsyncAnthropic:
-    global _anthropic
-    if _anthropic is None:
-        import httpx
-        http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(60.0, connect=15.0),
-            transport=httpx.AsyncHTTPTransport(retries=2),
-        )
-        _anthropic = anthropic.AsyncAnthropic(
-            api_key=settings.anthropic_api_key,
-            http_client=http_client,
-        )
-    return _anthropic
 
 
 async def embed_text(text: str) -> list[float]:
@@ -66,7 +47,6 @@ def _build_system_prompt(rules: list[AskRule]) -> str:
 
 
 def search_chunks(query_embedding: list[float], db: Session, k: int = TOP_K) -> list[KnowledgeChunk]:
-    from pgvector.sqlalchemy import Vector
     results = db.execute(
         select(KnowledgeChunk)
         .where(KnowledgeChunk.embedding.isnot(None))
@@ -76,40 +56,19 @@ def search_chunks(query_embedding: list[float], db: Session, k: int = TOP_K) -> 
     return results
 
 
-async def _call_anthropic(system_prompt: str, user_content: str) -> str:
-    """Non-streaming call with retry. Returns full response text."""
-    client = _get_anthropic()
-    last_err = None
-    for attempt in range(3):
-        try:
-            msg = await client.messages.create(
-                model=CHAT_MODEL,
-                max_tokens=2048,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_content}],
-            )
-            return msg.content[0].text
-        except Exception as e:
-            last_err = e
-            logger.warning(f"Anthropic attempt {attempt + 1} failed: {type(e).__name__}: {e}")
-            if attempt < 2:
-                await asyncio.sleep(2)
-    raise last_err
-
-
 async def ask_stream(
     question: str,
     db: Session,
 ) -> AsyncGenerator[str, None]:
-    if not settings.openai_api_key or not settings.anthropic_api_key:
-        yield f"data: {json.dumps({'error': 'Ask PL is not configured — API keys missing.'})}\n\n"
+    if not settings.openai_api_key:
+        yield f"data: {json.dumps({'error': 'Ask PL is not configured — OPENAI_API_KEY missing.'})}\n\n"
         return
 
     try:
         query_vec = await embed_text(question)
     except Exception as e:
         logger.error(f"Embedding failed: {e}")
-        msg = "OpenAI rate limit or quota exceeded — check platform.openai.com billing." if "429" in str(e) or "rate" in str(e).lower() else "Could not process your question. Please try again."
+        msg = "OpenAI rate limit or quota exceeded." if "429" in str(e) or "rate" in str(e).lower() else "Could not process your question. Please try again."
         yield f"data: {json.dumps({'error': msg})}\n\n"
         return
 
@@ -131,38 +90,24 @@ async def ask_stream(
     context_text = "\n\n---\n\n".join(context_parts)
     rules = db.execute(select(AskRule)).scalars().all()
     system_prompt = _build_system_prompt(rules)
-    user_content = f"Context:\n{context_text}\n\nQuestion: {question}"
 
-    # Try streaming first; fall back to non-streaming on connection error
     try:
-        client = _get_anthropic()
-        async with client.messages.stream(
+        stream = await _get_openai().chat.completions.create(
             model=CHAT_MODEL,
             max_tokens=2048,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_content}],
-        ) as stream:
-            async for text in stream.text_stream:
+            stream=True,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Context:\n{context_text}\n\nQuestion: {question}"},
+            ],
+        )
+        async for chunk in stream:
+            text = chunk.choices[0].delta.content
+            if text:
                 yield f"data: {json.dumps({'text': text})}\n\n"
-    except anthropic.APIConnectionError as e:
-        logger.warning(f"Streaming connection error, falling back to non-streaming: {e}")
-        try:
-            full_text = await _call_anthropic(system_prompt, user_content)
-            # Yield in small chunks to simulate streaming feel
-            words = full_text.split(" ")
-            for i in range(0, len(words), 8):
-                chunk_text = " ".join(words[i:i+8])
-                if i + 8 < len(words):
-                    chunk_text += " "
-                yield f"data: {json.dumps({'text': chunk_text})}\n\n"
-                await asyncio.sleep(0.02)
-        except Exception as e2:
-            logger.error(f"Anthropic fallback also failed: {type(e2).__name__}: {e2}")
-            yield f"data: {json.dumps({'error': 'Could not reach the AI service. Please try again in a moment.'})}\n\n"
-            return
     except Exception as e:
-        logger.error(f"Anthropic streaming failed: {type(e).__name__}: {e}")
-        yield f"data: {json.dumps({'error': 'Could not reach the AI service. Please try again in a moment.'})}\n\n"
+        logger.error(f"OpenAI chat failed: {type(e).__name__}: {e}")
+        yield f"data: {json.dumps({'error': 'Could not generate a response. Please try again.'})}\n\n"
         return
 
     sources = list(seen_sources.values())
