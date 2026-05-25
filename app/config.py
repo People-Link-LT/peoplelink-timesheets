@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     sharepoint_backup_folder: str = "Timesheets/Backups"
     sharepoint_drive_name: str = ""        # named document library, e.g. "Kiti dokumentai"
     sharepoint_documents_folder: str = ""  # default folder for Documents browse/upload, e.g. "Documents"
+    sharepoint_index_drives: str = ""      # comma-separated drives to index for Ask PL, e.g. "Kiti dokumentai,Aktualūs dokumentai"
 
     model_config = {"env_file": str(Path(__file__).parent.parent / ".env")}
 

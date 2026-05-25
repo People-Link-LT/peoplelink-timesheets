@@ -14,13 +14,15 @@ logger = logging.getLogger(__name__)
 
 _SYSTEM_BASE = """You are Ask PL, the internal AI assistant for People Link employees.
 Answer questions using only the provided context below. If the answer is not in the context, clearly say you don't have that information in your knowledge base — never make things up.
-Always cite the source name for each fact you state (e.g. "According to [Assignment PL-001 — Acme Corp]...").
-Be concise and professional."""
+Always respond in the same language the user asked in (Lithuanian if they asked in Lithuanian, English if in English).
+Always cite the source document for each fact you state. If a URL is available, make it a clickable link: e.g. "According to [Augimo sistema 2025.docx](https://...)..."
+When multiple documents cover the same topic, prefer the most recent one.
+Be concise and professional. For list-style questions, use bullet points."""
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIMS = 1536
 CHAT_MODEL = "claude-haiku-4-5-20251001"
-TOP_K = 8
+TOP_K = 15
 
 
 def _openai_client() -> AsyncOpenAI:
@@ -80,11 +82,12 @@ async def ask_stream(
         return
 
     context_parts = []
-    seen_sources: dict[str, str] = {}
+    seen_sources: dict[str, dict] = {}
     for chunk in chunks:
         context_parts.append(f"[{chunk.source_name}]\n{chunk.content}")
-        if chunk.source_id not in seen_sources:
-            seen_sources[chunk.source_id] = chunk.source_name
+        base_id = chunk.source_id.split("::")[0]
+        if base_id not in seen_sources:
+            seen_sources[base_id] = {"name": chunk.source_name, "url": chunk.source_url or ""}
 
     context_text = "\n\n---\n\n".join(context_parts)
 
@@ -95,7 +98,7 @@ async def ask_stream(
     try:
         async with client.messages.stream(
             model=CHAT_MODEL,
-            max_tokens=1024,
+            max_tokens=2048,
             system=system_prompt,
             messages=[
                 {
@@ -111,5 +114,5 @@ async def ask_stream(
         yield f"data: {json.dumps({'error': f'Response generation failed: {type(e).__name__}'})}\n\n"
         return
 
-    sources = [{"name": name} for name in seen_sources.values()]
+    sources = list(seen_sources.values())
     yield f"data: {json.dumps({'done': True, 'sources': sources})}\n\n"

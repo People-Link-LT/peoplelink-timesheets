@@ -92,13 +92,25 @@ function escapeHtml(text) {
   return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function renderMarkdown(text) {
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-600 underline hover:text-blue-800">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
+    .replace(/\n/g, '<br>');
+}
+
 function addSources(wrapper, sources) {
   if (!sources || !sources.length) return;
   const body = wrapper.querySelector('.message-body');
   const div = document.createElement('div');
   div.className = 'mt-3 pt-3 border-t border-gray-100';
   div.innerHTML = `<p class="text-xs text-gray-400 font-medium mb-1">Sources</p>` +
-    sources.map(s => `<span class="inline-block text-xs bg-gray-100 text-gray-600 rounded px-2 py-0.5 mr-1 mb-1">${escapeHtml(s.name)}</span>`).join('');
+    sources.map(s => s.url
+      ? `<a href="${s.url}" target="_blank" class="inline-block text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 rounded px-2 py-0.5 mr-1 mb-1 border border-blue-200">${escapeHtml(s.name)} ↗</a>`
+      : `<span class="inline-block text-xs bg-gray-100 text-gray-600 rounded px-2 py-0.5 mr-1 mb-1">${escapeHtml(s.name)}</span>`
+    ).join('');
   body.appendChild(div);
 }
 
@@ -146,9 +158,9 @@ form.addEventListener('submit', async (e) => {
           break;
         }
         if (payload.text) {
-          if (!started) { bodyEl.textContent = ''; started = true; }
+          if (!started) { bodyEl.innerHTML = ''; started = true; }
           fullText += payload.text;
-          bodyEl.textContent = fullText;
+          bodyEl.innerHTML = renderMarkdown(fullText);
           messages.scrollTop = messages.scrollHeight;
         }
         if (payload.done) {
