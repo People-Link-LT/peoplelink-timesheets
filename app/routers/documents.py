@@ -26,15 +26,18 @@ def _sp_configured() -> bool:
     ])
 
 
-def _sp_kwargs() -> dict:
+def _sp_base_kwargs() -> dict:
     return dict(
         tenant_id=settings.sharepoint_tenant_id,
         client_id=settings.sharepoint_client_id,
         client_secret=settings.sharepoint_client_secret,
         site_hostname=settings.sharepoint_site_hostname,
         site_path=settings.sharepoint_site_path,
-        drive_name=settings.sharepoint_drive_name,
     )
+
+
+def _sp_kwargs(drive_name: str = "") -> dict:
+    return {**_sp_base_kwargs(), "drive_name": drive_name or settings.sharepoint_drive_name}
 
 
 # ---------------------------------------------------------------------------
@@ -45,29 +48,34 @@ def _sp_kwargs() -> dict:
 async def browse(
     request: Request,
     folder: str = "",
+    drive: str = "",
     user: User = Depends(get_current_user),
 ):
     files, error = [], None
-    current_folder = folder or settings.sharepoint_documents_folder
 
     if _sp_configured():
         try:
-            from app.sharepoint import list_files
-            files = await list_files(**_sp_kwargs(), folder=current_folder)
+            if not drive:
+                from app.sharepoint import list_drives
+                files = await list_drives(**_sp_base_kwargs())
+            else:
+                from app.sharepoint import list_files
+                files = await list_files(**_sp_kwargs(drive), folder=folder)
         except Exception as e:
             logger.error(f"Browse error: {e}")
             error = str(e)
     else:
         error = "SharePoint is not configured. Set SHAREPOINT_* environment variables."
 
-    parts = [p for p in current_folder.split("/") if p] if current_folder else []
+    breadcrumb = [p for p in folder.split("/") if p] if folder else []
 
     return templates.TemplateResponse(request, "documents/browse.html", {
         "user": user,
         "files": files,
         "error": error,
-        "current_folder": current_folder,
-        "breadcrumb": parts,
+        "current_folder": folder,
+        "current_drive": drive,
+        "breadcrumb": breadcrumb,
     })
 
 
@@ -78,6 +86,7 @@ async def browse(
 @router.get("/file/{item_id}")
 async def file_proxy(
     item_id: str,
+    drive: str = "",
     user: User = Depends(get_current_user),
 ):
     if not _sp_configured():
@@ -85,7 +94,7 @@ async def file_proxy(
 
     try:
         from app.sharepoint import get_file_stream
-        content, mime_type, filename = await get_file_stream(**_sp_kwargs(), item_id=item_id)
+        content, mime_type, filename = await get_file_stream(**_sp_kwargs(drive), item_id=item_id)
         return Response(
             content=content,
             media_type=mime_type,

@@ -85,6 +85,54 @@ async def _resolve_drive(
     return drive_base
 
 
+async def list_drives(
+    tenant_id: str,
+    client_id: str,
+    client_secret: str,
+    site_hostname: str,
+    site_path: str,
+) -> list[dict]:
+    """Returns all document libraries on the site as folder-like entries."""
+    token = await _get_token(tenant_id, client_id, client_secret)
+    auth = {"Authorization": f"Bearer {token}"}
+
+    key = f"drives:{site_hostname}:{site_path}"
+    cached = _cache_get(key)
+    if cached:
+        return cached
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        site_resp = await client.get(
+            f"{_GRAPH}/sites/{site_hostname}:/{site_path}", headers=auth
+        )
+        if not site_resp.is_success:
+            raise RuntimeError(f"Site lookup {site_resp.status_code}: {site_resp.text}")
+        site_id = site_resp.json()["id"]
+
+        drives_resp = await client.get(
+            f"{_GRAPH}/sites/{site_id}/drives", headers=auth
+        )
+        drives_resp.raise_for_status()
+
+        result = [
+            {
+                "id": d["id"],
+                "name": d["name"],
+                "size": 0,
+                "modified": d.get("lastModifiedDateTime", ""),
+                "download_url": "",
+                "web_url": d.get("webUrl", ""),
+                "is_folder": True,
+                "mime_type": "",
+            }
+            for d in drives_resp.json().get("value", [])
+        ]
+        result.sort(key=lambda x: x["name"].lower())
+
+    _cache_set(key, result, 3600)
+    return result
+
+
 async def upload_file(
     tenant_id: str,
     client_id: str,

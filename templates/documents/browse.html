@@ -8,15 +8,23 @@
     <h1 class="text-xl font-semibold text-gray-900">Documents</h1>
     <div class="flex items-center gap-1 mt-1 text-sm text-gray-400 flex-wrap">
       <a href="/documents" class="hover:text-blue-600 font-medium">Dokumentų biblioteka</a>
+      {% if current_drive %}
+      <span class="text-gray-300">/</span>
+      {% if breadcrumb %}
+        <a href="/documents?drive={{ current_drive | urlencode }}" class="hover:text-blue-600">{{ current_drive }}</a>
+      {% else %}
+        <span class="text-gray-700">{{ current_drive }}</span>
+      {% endif %}
       {% for part in breadcrumb %}
       <span class="text-gray-300">/</span>
       {% set path_so_far = breadcrumb[:loop.index] | join('/') %}
       {% if loop.last %}
         <span class="text-gray-700">{{ part }}</span>
       {% else %}
-        <a href="/documents?folder={{ path_so_far }}" class="hover:text-blue-600">{{ part }}</a>
+        <a href="/documents?drive={{ current_drive | urlencode }}&folder={{ path_so_far | urlencode }}" class="hover:text-blue-600">{{ part }}</a>
       {% endif %}
       {% endfor %}
+      {% endif %}
     </div>
   </div>
   <a href="/documents/upload"
@@ -195,6 +203,8 @@
 
 {# ── scripts ─────────────────────────────────────────────────────────────── #}
 <script>
+const currentDrive = {{ current_drive | tojson }};
+
 // ── helpers ────────────────────────────────────────────────────────────────
 
 function ext(name) {
@@ -230,8 +240,8 @@ function openViewer(name, itemId, downloadUrl, webUrl, mimeType) {
   const cat = fileCategory(name);
 
   if (cat === 'pdf' && downloadUrl) {
-    // Proxy through backend so auth is handled server-side
-    const proxyUrl = `/documents/file/${itemId}`;
+    const driveParam = currentDrive ? `?drive=${encodeURIComponent(currentDrive)}` : '';
+    const proxyUrl = `/documents/file/${itemId}${driveParam}`;
     content.innerHTML =
       `<iframe src="${proxyUrl}" class="w-full h-full border-0" title="${name}"></iframe>`;
 
@@ -251,7 +261,8 @@ function openViewer(name, itemId, downloadUrl, webUrl, mimeType) {
 
   } else if (cat === 'text' && itemId) {
     loading.classList.remove('hidden');
-    fetch(`/documents/file/${itemId}`)
+    const driveParam2 = currentDrive ? `?drive=${encodeURIComponent(currentDrive)}` : '';
+    fetch(`/documents/file/${itemId}${driveParam2}`)
       .then(r => r.text())
       .then(text => {
         loading.classList.add('hidden');
@@ -314,9 +325,14 @@ document.querySelectorAll('#file-table tbody tr').forEach(row => {
 
   // Double-click: navigate folder or open file viewer
   row.addEventListener('dblclick', e => {
-    if (e.target.closest('a')) return; // let download link work normally
+    if (e.target.closest('a')) return;
     if (isFolder) {
-      window.location.href = `/documents?folder=${encodeURIComponent(folderPath)}`;
+      if (!currentDrive) {
+        // At root — name is the drive name
+        window.location.href = `/documents?drive=${encodeURIComponent(name)}`;
+      } else {
+        window.location.href = `/documents?drive=${encodeURIComponent(currentDrive)}&folder=${encodeURIComponent(folderPath)}`;
+      }
     } else {
       openViewer(name, itemId, dlUrl, webUrl, mime);
     }
