@@ -70,18 +70,9 @@ async def _index_sharepoint(db: Session) -> int:
     ]):
         return 0
 
-    from app.sharepoint import list_files, _get_token
+    from app.sharepoint import list_files
     import httpx
-
-    try:
-        token = await _get_token(
-            settings.sharepoint_tenant_id,
-            settings.sharepoint_client_id,
-            settings.sharepoint_client_secret,
-        )
-    except Exception as e:
-        logger.error(f"SharePoint auth failed during indexing: {e}")
-        return 0
+    import io as _io
 
     sp_kwargs = dict(
         tenant_id=settings.sharepoint_tenant_id,
@@ -92,23 +83,35 @@ async def _index_sharepoint(db: Session) -> int:
         drive_name=settings.sharepoint_drive_name,
     )
 
-    TEXT_EXTENSIONS = {".txt", ".md", ".csv"}
+    SUPPORTED_EXTENSIONS = {".txt", ".md", ".csv", ".pdf", ".docx"}
     now = datetime.now(timezone.utc)
     indexed = 0
 
-    try:
-        files = await list_files(**sp_kwargs, folder=settings.sharepoint_documents_folder or "")
-    except Exception as e:
-        logger.error(f"SharePoint list failed: {e}")
-        return 0
+    # Collect all files recursively across subfolders
+    async def collect_files(folder: str) -> list[dict]:
+        try:
+            items = await list_files(**sp_kwargs, folder=folder)
+        except Exception as e:
+            logger.error(f"SharePoint list failed for '{folder}': {e}")
+            return []
+        result = []
+        for item in items:
+            if item["is_folder"]:
+                sub = await collect_files(f"{folder}/{item['name']}".lstrip("/") if folder else item["name"])
+                result.extend(sub)
+            else:
+                result.append(item)
+        return result
+
+    root_folder = settings.sharepoint_documents_folder or ""
+    all_files = await collect_files(root_folder)
+    logger.info(f"SharePoint indexing: found {len(all_files)} files under '{root_folder}'")
 
     async with httpx.AsyncClient(timeout=60) as http:
-        for f in files:
-            if f["is_folder"]:
-                continue
+        for f in all_files:
             name: str = f["name"]
             ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
-            if ext not in TEXT_EXTENSIONS:
+            if ext not in SUPPORTED_EXTENSIONS:
                 continue
 
             download_url = f.get("download_url")
@@ -118,9 +121,25 @@ async def _index_sharepoint(db: Session) -> int:
             try:
                 resp = await http.get(download_url)
                 resp.raise_for_status()
-                content_text = resp.text[:8000]  # cap at ~8k chars per file
+                raw = resp.content
             except Exception as e:
                 logger.error(f"Failed to download {name}: {e}")
+                continue
+
+            try:
+                if ext == ".pdf":
+                    from pypdf import PdfReader
+                    reader = PdfReader(_io.BytesIO(raw))
+                    content_text = "\n".join(p.extract_text() or "" for p in reader.pages)
+                elif ext == ".docx":
+                    from docx import Document
+                    doc = Document(_io.BytesIO(raw))
+                    content_text = "\n".join(p.text for p in doc.paragraphs)
+                else:
+                    content_text = raw.decode("utf-8", errors="replace")
+                content_text = content_text[:8000]
+            except Exception as e:
+                logger.error(f"Failed to extract text from {name}: {e}")
                 continue
 
             try:
