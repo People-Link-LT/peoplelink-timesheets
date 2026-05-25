@@ -1,4 +1,5 @@
 import logging
+import threading
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -46,9 +47,9 @@ async def ask_query(
 # ---------------------------------------------------------------------------
 
 @router.get("/admin/rules", response_class=HTMLResponse)
-def rules_page(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+def rules_page(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin), indexed: str = ""):
     rules = db.execute(select(AskRule).order_by(AskRule.priority, AskRule.created_at)).scalars().all()
-    return templates.TemplateResponse(request, "admin/rules.html", {"user": admin, "rules": rules})
+    return templates.TemplateResponse(request, "admin/rules.html", {"user": admin, "rules": rules, "indexing_started": bool(indexed)})
 
 
 @router.post("/admin/rules/create")
@@ -85,5 +86,5 @@ def delete_rule(rule_id: str, db: Session = Depends(get_db), admin: User = Depen
 @router.post("/admin/index-now")
 def trigger_index(admin: User = Depends(get_current_admin)):
     from app.indexer import run_indexing_sync
-    run_indexing_sync()
-    return RedirectResponse("/ask/admin/rules", status_code=302)
+    threading.Thread(target=run_indexing_sync, daemon=True).start()
+    return RedirectResponse("/ask/admin/rules?indexed=1", status_code=302)
