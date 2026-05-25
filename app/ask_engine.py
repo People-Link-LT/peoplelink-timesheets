@@ -68,7 +68,8 @@ async def ask_stream(
         query_vec = await embed_text(question)
     except Exception as e:
         logger.error(f"Embedding failed: {e}")
-        yield f"data: {json.dumps({'error': 'Could not process your question. Please try again.'})}\n\n"
+        msg = "OpenAI rate limit or quota exceeded — check platform.openai.com billing." if "429" in str(e) or "rate" in str(e).lower() else "Could not process your question. Please try again."
+        yield f"data: {json.dumps({'error': msg})}\n\n"
         return
 
     chunks = search_chunks(query_vec, db)
