@@ -53,7 +53,10 @@ def sync_assignments():
 
 def start_scheduler():
     scheduler.add_job(sync_assignments, "cron", hour=3, minute=0, id="invenias_sync", replace_existing=True)
-    from app.backup import run_backup
+    from app.backup import run_backup, check_backup_health
     scheduler.add_job(run_backup, "cron", hour=2, minute=30, id="sharepoint_backup", replace_existing=True)
+    scheduler.add_job(check_backup_health, "cron", hour=17, minute=0, id="backup_health_check", replace_existing=True)
+    from app.indexer import run_indexing_sync
+    scheduler.add_job(run_indexing_sync, "cron", hour=3, minute=30, id="ask_index", replace_existing=True)
     scheduler.start()
-    logger.info("Scheduler started (Invenias sync 03:00, SharePoint backup 02:30).")
+    logger.info("Scheduler started (sync 03:00, backup 02:30, index 03:30, health check 17:00).")

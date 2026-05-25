@@ -72,3 +72,21 @@ def send_otp_email(to_email: str, full_name: str, code: str) -> None:
         logger.info(f"OTP email sent to {to_email}")
     except Exception as e:
         logger.error(f"Failed to send OTP email to {to_email}: {e}")
+
+
+def send_backup_alert_email(to_email: str, date_str: str, missing: list) -> None:
+    import asyncio
+    missing_list = "".join(f"<li>{f}</li>" for f in missing)
+    subject = f"⚠️ PeopleLink Timesheets — backup missing for {date_str}"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+      <p style="color:#1d4ed8;font-weight:700;font-size:18px;margin-bottom:4px">PeopleLink Timesheets</p>
+      <p style="color:#374151">Daily backup check failed for <strong>{date_str}</strong>.</p>
+      <p style="color:#374151">The following files were not found on SharePoint:</p>
+      <ul style="color:#dc2626;font-family:monospace">{missing_list}</ul>
+      <p style="color:#374151">Please check the Railway logs and run a manual backup from the admin panel.</p>
+      <p style="color:#6b7280;font-size:12px">This alert was sent automatically at 17:00.</p>
+    </div>
+    """
+    text = f"Backup missing for {date_str}:\n" + "\n".join(f"  - {f}" for f in missing)
+    asyncio.run(_send_via_graph(to_email, subject, html, text))

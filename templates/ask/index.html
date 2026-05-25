@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Ask PL — PeopleLink Central{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-[calc(100vh-4rem)]">
+
+  <!-- Header -->
+  <div class="mb-4 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl font-semibold text-gray-900">Ask PL</h1>
+      <p class="text-sm text-gray-500 mt-0.5">Ask anything about People Link — assignments, processes, documents.</p>
+    </div>
+    {% if user.is_admin %}
+    <a href="/ask/admin/rules" class="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5">
+      Manage rules
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- Messages -->
+  <div id="messages" class="flex-1 overflow-y-auto space-y-5 pr-1 pb-4">
+    <!-- Welcome -->
+    <div class="flex gap-3">
+      <div class="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+        </svg>
+      </div>
+      <div class="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 max-w-2xl shadow-sm">
+        <p class="text-sm text-gray-700">Hi <strong>{{ user.full_name.split()[0] }}</strong>! I'm Ask PL — your People Link AI assistant. Ask me about assignments, clients, processes, or any internal knowledge.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input -->
+  <div class="border-t border-gray-200 pt-4">
+    <form id="ask-form" class="flex gap-3">
+      <input
+        id="question-input"
+        type="text"
+        placeholder="Ask a question about People Link..."
+        autocomplete="off"
+        class="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      />
+      <button
+        id="send-btn"
+        type="submit"
+        class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+        </svg>
+        Send
+      </button>
+    </form>
+  </div>
+</div>
+
+<script>
+const form = document.getElementById('ask-form');
+const input = document.getElementById('question-input');
+const sendBtn = document.getElementById('send-btn');
+const messages = document.getElementById('messages');
+
+function addMessage(role, html) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'flex gap-3' + (role === 'user' ? ' justify-end' : '');
+
+  if (role === 'assistant') {
+    wrapper.innerHTML = `
+      <div class="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shrink-0 mt-0.5">
+        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+        </svg>
+      </div>
+      <div class="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 max-w-2xl shadow-sm">
+        <div class="message-body text-sm text-gray-700 whitespace-pre-wrap">${html}</div>
+      </div>`;
+  } else {
+    wrapper.innerHTML = `
+      <div class="bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 max-w-lg">
+        <p class="text-sm">${escapeHtml(html)}</p>
+      </div>`;
+  }
+
+  messages.appendChild(wrapper);
+  messages.scrollTop = messages.scrollHeight;
+  return wrapper;
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function addSources(wrapper, sources) {
+  if (!sources || !sources.length) return;
+  const body = wrapper.querySelector('.message-body');
+  const div = document.createElement('div');
+  div.className = 'mt-3 pt-3 border-t border-gray-100';
+  div.innerHTML = `<p class="text-xs text-gray-400 font-medium mb-1">Sources</p>` +
+    sources.map(s => `<span class="inline-block text-xs bg-gray-100 text-gray-600 rounded px-2 py-0.5 mr-1 mb-1">${escapeHtml(s.name)}</span>`).join('');
+  body.appendChild(div);
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const question = input.value.trim();
+  if (!question) return;
+
+  input.value = '';
+  sendBtn.disabled = true;
+
+  addMessage('user', question);
+
+  const assistantWrapper = addMessage('assistant', '<span class="animate-pulse text-gray-400">Thinking…</span>');
+  const bodyEl = assistantWrapper.querySelector('.message-body');
+  let fullText = '';
+  let started = false;
+
+  try {
+    const resp = await fetch('/ask/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let payload;
+        try { payload = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (payload.error) {
+          bodyEl.innerHTML = `<span class="text-red-500">${escapeHtml(payload.error)}</span>`;
+          break;
+        }
+        if (payload.text) {
+          if (!started) { bodyEl.textContent = ''; started = true; }
+          fullText += payload.text;
+          bodyEl.textContent = fullText;
+          messages.scrollTop = messages.scrollHeight;
+        }
+        if (payload.done) {
+          addSources(assistantWrapper, payload.sources);
+        }
+      }
+    }
+  } catch (err) {
+    bodyEl.innerHTML = `<span class="text-red-500">Connection error. Please try again.</span>`;
+  } finally {
+    sendBtn.disabled = false;
+    input.focus();
+  }
+});
+
+input.focus();
+</script>
+{% endblock %}

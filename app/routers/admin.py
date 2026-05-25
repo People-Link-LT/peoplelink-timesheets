@@ -1,14 +1,10 @@
 import io
-import os
-import subprocess
 from datetime import datetime
-from urllib.parse import urlparse
 
 from app.templates import templates
-from fastapi import APIRouter, Depends, HTTPException, Request, Form
+from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
-from app.config import settings
 from app.database import get_db
 from app.auth import get_current_admin, hash_password
 from app.models import User, Team
@@ -124,35 +120,26 @@ def manual_sync(admin: User = Depends(get_current_admin)):
     return RedirectResponse("/admin/users", status_code=302)
 
 
-@router.post("/backup-now")
-def manual_backup(admin: User = Depends(get_current_admin)):
+@router.post("/backup-now", response_class=HTMLResponse)
+def manual_backup(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
     from app.backup import run_backup
-    run_backup()
-    return RedirectResponse("/admin/users", status_code=302)
+    result = run_backup()
+    users = db.query(User).order_by(User.full_name).all()
+    teams = db.query(Team).order_by(Team.name).all()
+    return templates.TemplateResponse(request, "admin/users.html", {
+        "user": admin, "users": users, "teams": teams,
+        "backup_ok": result["ok"],
+        "backup_messages": result["messages"],
+    })
 
 
 @router.get("/backup/download")
 def download_backup(admin: User = Depends(get_current_admin)):
-    url = urlparse(settings.database_url)
-    env = os.environ.copy()
-    env["PGPASSWORD"] = url.password or ""
-    cmd = [
-        "pg_dump",
-        "-h", url.hostname,
-        "-p", str(url.port or 5432),
-        "-U", url.username,
-        url.path.lstrip("/"),
-        "--no-owner",
-        "--no-acl",
-        "--clean",
-        "--if-exists",
-    ]
-    result = subprocess.run(cmd, capture_output=True, env=env)
-    if result.returncode != 0:
-        raise HTTPException(500, f"pg_dump failed: {result.stderr.decode()}")
+    from app.backup import _db_export
+    db_bytes = _db_export()
     filename = f"timesheets_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.sql"
     return StreamingResponse(
-        io.BytesIO(result.stdout),
+        io.BytesIO(db_bytes),
         media_type="application/octet-stream",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

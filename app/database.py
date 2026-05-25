@@ -20,10 +20,13 @@ def get_db():
 
 def init_db():
     from app import models  # noqa: F401 – ensure models are registered
-    Base.metadata.create_all(bind=engine)
-    # Safe migrations for columns added after initial deploy
     from sqlalchemy import text
     with engine.connect() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        conn.commit()
+    Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        # Safe column migrations
         for col, definition in [
             ("is_2fa_enabled", "BOOLEAN NOT NULL DEFAULT FALSE"),
             ("twofa_method", "VARCHAR(10)"),
@@ -36,3 +39,12 @@ def init_db():
                 conn.commit()
             except Exception:
                 conn.rollback()
+        # HNSW index for fast ANN search on embeddings
+        try:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS knowledge_chunks_embedding_hnsw "
+                "ON knowledge_chunks USING hnsw (embedding vector_cosine_ops)"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()

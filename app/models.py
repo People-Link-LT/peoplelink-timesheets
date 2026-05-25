@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime, date
 from sqlalchemy import (
-    String, Boolean, Integer, DateTime, Date, ForeignKey, UniqueConstraint, func
+    String, Boolean, Integer, DateTime, Date, ForeignKey, UniqueConstraint, func, Text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 from app.database import Base
 
 
@@ -110,3 +111,27 @@ class TimesheetEntry(Base):
     def total_minutes(self) -> int:
         return (self.monday_minutes + self.tuesday_minutes + self.wednesday_minutes
                 + self.thursday_minutes + self.friday_minutes)
+
+
+class KnowledgeChunk(Base):
+    __tablename__ = "knowledge_chunks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False)   # "invenias", "sharepoint"
+    source_id: Mapped[str] = mapped_column(String(255), nullable=False)    # Invenias ItemId or SP file ID
+    source_name: Mapped[str] = mapped_column(String(500), nullable=False)  # human-readable label
+    source_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding = mapped_column(Vector(1536), nullable=True)
+    indexed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+class AskRule(Base):
+    __tablename__ = "ask_rules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    rule_text: Mapped[str] = mapped_column(String(1000), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.database import init_db, SessionLocal
 from app.invenias import fetch_active_assignments
 from app.models import Assignment
-from app.routers import auth, timesheet, portfolio, dashboard, admin, profile
+from app.routers import auth, timesheet, portfolio, dashboard, admin, profile, setup, documents, ask
 from app.scheduler import start_scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="PeopleLink Timesheets", lifespan=lifespan)
+app = FastAPI(title="PeopleLink Central", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(auth.router)
@@ -58,6 +58,9 @@ app.include_router(portfolio.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
 app.include_router(profile.router)
+app.include_router(setup.router)
+app.include_router(documents.router)
+app.include_router(ask.router)
 
 
 @app.middleware("http")

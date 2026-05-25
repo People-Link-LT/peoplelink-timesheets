@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Linked Documents — PeopleLink Central{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-xl font-semibold text-gray-900">Linked Documents</h1>
+    <p class="text-sm text-gray-500 mt-0.5">Attach documents to assignments for quick access.</p>
+  </div>
+</div>
+
+<div class="bg-blue-50 border border-blue-200 text-blue-800 rounded-xl px-5 py-4 text-sm mb-6">
+  <p class="font-semibold mb-0.5">Coming soon</p>
+  <p>Document-to-assignment linking is being built. You'll be able to attach contracts, invoices, and candidate documents directly to Invenias assignments.</p>
+</div>
+
+{% if assignments %}
+<div class="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b border-gray-200">
+      <tr>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Assignment</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Company</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+        <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Documents</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for a in assignments %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 font-medium text-gray-800">{{ a.reference_number }}</td>
+        <td class="px-4 py-3 text-gray-600">{{ a.company_name or '—' }}</td>
+        <td class="px-4 py-3">
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+            {% if a.status == 'Active' %}bg-green-100 text-green-700
+            {% else %}bg-gray-100 text-gray-500{% endif %}">
+            {{ a.status }}
+          </span>
+        </td>
+        <td class="px-4 py-3 text-center text-gray-400 text-xs">—</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

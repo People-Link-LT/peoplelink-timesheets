@@ -21,6 +21,20 @@
   </div>
 </div>
 
+{% if backup_messages is defined %}
+{% if backup_ok %}
+<div class="bg-green-50 border border-green-200 text-green-800 rounded-2xl px-5 py-4 mb-6 text-sm">
+  <p class="font-semibold mb-1">Backup completed</p>
+  {% for msg in backup_messages %}<p>{{ msg }}</p>{% endfor %}
+</div>
+{% else %}
+<div class="bg-red-50 border border-red-200 text-red-800 rounded-2xl px-5 py-4 mb-6 text-sm">
+  <p class="font-semibold mb-1">Backup failed</p>
+  {% for msg in backup_messages %}<p class="font-mono text-xs">{{ msg }}</p>{% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
 <!-- Pending approval -->
 {% set pending = users | selectattr('is_approved', 'false') | list %}
 {% if pending %}

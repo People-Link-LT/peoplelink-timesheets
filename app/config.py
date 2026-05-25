@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     smtp_from: str = ""      # M365 address to send from, e.g. matas@peoplelink.lt
     smtp_username: str = ""  # fallback alias for smtp_from
 
+    setup_token: str = ""  # required to call /setup/create-admin
+
+    # Ask PL — RAG assistant
+    openai_api_key: str = ""       # for text-embedding-3-small
+    anthropic_api_key: str = ""    # for Claude Haiku streaming
+
     # SharePoint backup (optional — backup job skips if empty)
     sharepoint_tenant_id: str = ""
     sharepoint_client_id: str = ""
@@ -24,6 +30,8 @@ class Settings(BaseSettings):
     sharepoint_site_hostname: str = ""   # e.g. peoplelink.sharepoint.com
     sharepoint_site_path: str = ""       # e.g. sites/IT
     sharepoint_backup_folder: str = "Timesheets/Backups"
+    sharepoint_drive_name: str = ""        # named document library, e.g. "Kiti dokumentai"
+    sharepoint_documents_folder: str = ""  # default folder for Documents browse/upload, e.g. "Documents"
 
     model_config = {"env_file": str(Path(__file__).parent.parent / ".env")}
 
