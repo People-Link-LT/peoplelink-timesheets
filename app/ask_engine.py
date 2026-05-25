@@ -96,13 +96,7 @@ async def ask_stream(
         async with client.messages.stream(
             model=CHAT_MODEL,
             max_tokens=1024,
-            system=[
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
+            system=system_prompt,
             messages=[
                 {
                     "role": "user",
@@ -113,8 +107,8 @@ async def ask_stream(
             async for text in stream.text_stream:
                 yield f"data: {json.dumps({'text': text})}\n\n"
     except Exception as e:
-        logger.error(f"Anthropic streaming failed: {e}")
-        yield f"data: {json.dumps({'error': 'Response generation failed. Please try again.'})}\n\n"
+        logger.error(f"Anthropic streaming failed: {type(e).__name__}: {e}")
+        yield f"data: {json.dumps({'error': f'Response generation failed: {type(e).__name__}'})}\n\n"
         return
 
     sources = [{"name": name} for name in seen_sources.values()]
