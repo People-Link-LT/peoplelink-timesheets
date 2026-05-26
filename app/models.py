@@ -126,6 +126,20 @@ class KnowledgeChunk(Base):
     indexed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
 
+class DocMeta(Base):
+    __tablename__ = "doc_meta"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    item_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    drive: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    path: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    name: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    audience: Mapped[str | None] = mapped_column(String(300), nullable=True)  # JSON array
+    updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
 class AskRule(Base):
     __tablename__ = "ask_rules"
 

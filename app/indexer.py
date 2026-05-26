@@ -279,6 +279,57 @@ async def _index_sharepoint(db: Session) -> int:
     return total
 
 
+async def _index_doc_comments(db: Session) -> int:
+    from app.models import DocMeta
+
+    metas = db.execute(
+        select(DocMeta).where(DocMeta.comment.isnot(None))
+    ).scalars().all()
+
+    now = datetime.now(timezone.utc)
+    indexed = 0
+
+    for meta in metas:
+        if not meta.comment:
+            continue
+
+        display = f"{meta.drive}/{meta.path}" if meta.path else meta.name
+        content = f"[Document: {display}]\n\nAnnotation: {meta.comment}"
+
+        try:
+            embedding = await embed_text(content)
+        except Exception as e:
+            logger.error(f"Embedding failed for doc comment {meta.item_id}: {e}")
+            continue
+
+        existing = db.execute(
+            select(KnowledgeChunk).where(
+                KnowledgeChunk.source_type == "doc_comment",
+                KnowledgeChunk.source_id == meta.item_id,
+            )
+        ).scalar_one_or_none()
+
+        if existing:
+            existing.content = content
+            existing.source_name = display
+            existing.embedding = embedding
+            existing.indexed_at = now
+        else:
+            db.add(KnowledgeChunk(
+                source_type="doc_comment",
+                source_id=meta.item_id,
+                source_name=display,
+                source_url=None,
+                content=content,
+                embedding=embedding,
+                indexed_at=now,
+            ))
+        indexed += 1
+
+    db.commit()
+    return indexed
+
+
 async def _run_indexing() -> dict:
     if not settings.openai_api_key:
         return {"ok": False, "message": "OPENAI_API_KEY not set — skipping indexing."}
@@ -287,7 +338,8 @@ async def _run_indexing() -> dict:
     try:
         invenias_count = await _index_assignments(db)
         sp_count = await _index_sharepoint(db)
-        msg = f"Indexed {invenias_count} Invenias assignments + {sp_count} SharePoint chunks"
+        comment_count = await _index_doc_comments(db)
+        msg = f"Indexed {invenias_count} Invenias assignments + {sp_count} SharePoint chunks + {comment_count} doc comments"
         logger.info(msg)
         return {"ok": True, "message": msg}
     except Exception as e:

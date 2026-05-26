@@ -1,16 +1,18 @@
 import csv
 import io
+import json as _json
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
-
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.config import settings
 from app.database import get_db
-from app.models import Assignment, TimesheetEntry, User, Week
+from app.models import Assignment, DocMeta, TimesheetEntry, User, Week
 from app.templates import templates
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,7 @@ async def browse(
     folder: str = "",
     drive: str = "",
     user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     files, error = [], None
 
@@ -69,6 +72,18 @@ async def browse(
 
     breadcrumb = [p for p in folder.split("/") if p] if folder else []
 
+    item_ids = [f["id"] for f in files if f.get("id")]
+    metas: dict = {}
+    if item_ids:
+        rows = db.execute(select(DocMeta).where(DocMeta.item_id.in_(item_ids))).scalars().all()
+        metas = {
+            r.item_id: {
+                "comment": r.comment or "",
+                "audience": _json.loads(r.audience) if r.audience else [],
+            }
+            for r in rows
+        }
+
     return templates.TemplateResponse(request, "documents/browse.html", {
         "user": user,
         "files": files,
@@ -76,7 +91,51 @@ async def browse(
         "current_folder": folder,
         "current_drive": drive,
         "breadcrumb": breadcrumb,
+        "metas": metas,
     })
+
+
+# ---------------------------------------------------------------------------
+# Metadata API — save comment + audience for a SharePoint item
+# ---------------------------------------------------------------------------
+
+@router.post("/api/meta", response_class=JSONResponse)
+async def save_meta(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    body = await request.json()
+    item_id = (body.get("item_id") or "").strip()
+    if not item_id:
+        return JSONResponse({"ok": False, "error": "item_id required"}, status_code=400)
+
+    comment = (body.get("comment") or "").strip()
+    audience = body.get("audience") or []
+    if isinstance(audience, str):
+        audience = [a.strip() for a in audience.split(",") if a.strip()]
+
+    existing = db.execute(select(DocMeta).where(DocMeta.item_id == item_id)).scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+
+    if existing:
+        existing.comment = comment or None
+        existing.audience = _json.dumps(audience) if audience else None
+        existing.updated_by = user.full_name
+        existing.updated_at = now
+    else:
+        db.add(DocMeta(
+            item_id=item_id,
+            drive=body.get("drive", ""),
+            path=body.get("path", ""),
+            name=body.get("name", ""),
+            comment=comment or None,
+            audience=_json.dumps(audience) if audience else None,
+            updated_by=user.full_name,
+            updated_at=now,
+        ))
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 # ---------------------------------------------------------------------------
