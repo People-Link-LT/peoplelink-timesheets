@@ -1,5 +1,6 @@
 import logging
 import time
+import unicodedata
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -9,6 +10,11 @@ _GRAPH = "https://graph.microsoft.com/v1.0"
 
 # In-memory cache — avoids repeating token + site lookups on every page load
 _cache: dict[str, dict] = {}
+
+
+def _normalize(s: str) -> str:
+    """Strips diacritics and lowercases for resilient drive-name matching."""
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii").lower()
 
 
 def _cache_get(key: str):
@@ -73,7 +79,7 @@ async def _resolve_drive(
         )
         drives_resp.raise_for_status()
         drive = next(
-            (d for d in drives_resp.json()["value"] if d["name"] == drive_name), None
+            (d for d in drives_resp.json()["value"] if _normalize(d["name"]) == _normalize(drive_name)), None
         )
         if not drive:
             raise RuntimeError(f"Drive '{drive_name}' not found on site {site_path}")

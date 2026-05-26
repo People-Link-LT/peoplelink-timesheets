@@ -88,3 +88,28 @@ def trigger_index(admin: User = Depends(get_current_admin)):
     from app.indexer import run_indexing_sync
     threading.Thread(target=run_indexing_sync, daemon=True).start()
     return RedirectResponse("/ask/admin/rules?indexed=1", status_code=302)
+
+
+@router.get("/admin/stats")
+async def stats(q: str = "", db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    from sqlalchemy import func, text
+    from app.models import KnowledgeChunk
+    from app.ask_engine import embed_text, search_chunks
+
+    counts = db.execute(
+        select(KnowledgeChunk.source_type, func.count()).group_by(KnowledgeChunk.source_type)
+    ).all()
+    result = {"chunks": {row[0]: row[1] for row in counts}, "top_matches": []}
+
+    if q:
+        try:
+            vec = await embed_text(q)
+            chunks = search_chunks(vec, db, k=5)
+            result["top_matches"] = [
+                {"source": c.source_name, "url": c.source_url, "preview": c.content[:200]}
+                for c in chunks
+            ]
+        except Exception as e:
+            result["error"] = str(e)
+
+    return result
