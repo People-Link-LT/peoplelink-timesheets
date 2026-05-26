@@ -92,8 +92,10 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
     from app.sharepoint import list_files, resolve_token_and_drive
 
     SUPPORTED_EXTENSIONS = {".txt", ".md", ".csv", ".pdf", ".docx", ".pptx", ".xlsx"}
+    MAX_FILE_BYTES = 25 * 1024 * 1024  # 25 MB — prevent OOM on Railway
     indexed = 0
     skipped_ext = 0
+    skipped_size = 0
 
     token, drive_base = await resolve_token_and_drive(**sp_kwargs, drive_name=drive_name)
     auth_headers = {"Authorization": f"Bearer {token}"}
@@ -124,6 +126,12 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
         ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
         if ext not in SUPPORTED_EXTENSIONS:
             skipped_ext += 1
+            continue
+
+        file_size = f.get("size") or 0
+        if file_size > MAX_FILE_BYTES:
+            logger.warning(f"[{drive_name}] Skipping {name} — {file_size:,} bytes (>{MAX_FILE_BYTES//1024//1024} MB)")
+            skipped_size += 1
             continue
 
         try:
@@ -213,7 +221,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
         db.commit()
         indexed += file_indexed
 
-    logger.info(f"[{drive_name}] Skipped {skipped_ext} files with unsupported extensions")
+    logger.info(f"[{drive_name}] Skipped {skipped_ext} unsupported + {skipped_size} oversized files")
     return indexed
 
 
