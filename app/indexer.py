@@ -144,7 +144,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
                     KnowledgeChunk.source_id == f["id"],
                 )
             ).scalar_one_or_none()
-            if existing is not None and existing >= file_modified:
+            if existing is not None and existing.replace(tzinfo=timezone.utc) >= file_modified:
                 continue  # Already up to date
 
         try:
