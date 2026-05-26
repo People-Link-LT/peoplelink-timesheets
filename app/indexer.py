@@ -193,6 +193,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
             logger.error(f"[{drive_name}] Text extraction failed for {name}: {e}")
             continue
 
+        full_text = full_text.replace("\x00", "")  # PostgreSQL rejects NUL characters
         raw_chunks = _chunk_text(full_text)[:MAX_CHUNKS_PER_FILE]
         if not raw_chunks:
             continue
