@@ -90,8 +90,9 @@ async def _index_assignments(db: Session) -> int:
 async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, now: datetime) -> int:
     from app.sharepoint import list_files
 
-    SUPPORTED_EXTENSIONS = {".txt", ".md", ".csv", ".pdf", ".docx"}
+    SUPPORTED_EXTENSIONS = {".txt", ".md", ".csv", ".pdf", ".docx", ".pptx", ".xlsx"}
     indexed = 0
+    skipped_ext = 0
 
     async def collect_files(folder: str) -> list[dict]:
         try:
@@ -117,6 +118,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
         name: str = f["name"]
         ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
         if ext not in SUPPORTED_EXTENSIONS:
+            skipped_ext += 1
             continue
 
         download_url = f.get("download_url")
@@ -140,6 +142,25 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
                 from docx import Document
                 doc = Document(_io.BytesIO(raw))
                 full_text = "\n".join(p.text for p in doc.paragraphs)
+            elif ext == ".pptx":
+                from pptx import Presentation
+                prs = Presentation(_io.BytesIO(raw))
+                slide_texts = []
+                for slide in prs.slides:
+                    for shape in slide.shapes:
+                        if hasattr(shape, "text") and shape.text.strip():
+                            slide_texts.append(shape.text)
+                full_text = "\n".join(slide_texts)
+            elif ext == ".xlsx":
+                import openpyxl
+                wb = openpyxl.load_workbook(_io.BytesIO(raw), read_only=True, data_only=True)
+                rows = []
+                for ws in wb.worksheets:
+                    for row in ws.iter_rows(values_only=True):
+                        row_text = " ".join(str(c) for c in row if c is not None)
+                        if row_text.strip():
+                            rows.append(row_text)
+                full_text = "\n".join(rows)
             else:
                 full_text = raw.decode("utf-8", errors="replace")
         except Exception as e:
@@ -178,6 +199,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
             indexed += 1
 
     db.commit()
+    logger.info(f"[{drive_name}] Skipped {skipped_ext} files with unsupported extensions")
     return indexed
 
 
