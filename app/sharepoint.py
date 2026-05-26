@@ -85,6 +85,22 @@ async def _resolve_drive(
     return drive_base
 
 
+async def resolve_token_and_drive(
+    tenant_id: str,
+    client_id: str,
+    client_secret: str,
+    site_hostname: str,
+    site_path: str,
+    drive_name: str = "",
+) -> tuple[str, str]:
+    """Returns (bearer_token, drive_base_url) for authenticated Graph API access."""
+    token = await _get_token(tenant_id, client_id, client_secret)
+    auth = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        drive_base = await _resolve_drive(client, auth, site_hostname, site_path, drive_name)
+    return token, drive_base
+
+
 async def list_drives(
     tenant_id: str,
     client_id: str,

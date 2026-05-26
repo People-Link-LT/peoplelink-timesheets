@@ -88,11 +88,14 @@ async def _index_assignments(db: Session) -> int:
 
 
 async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, now: datetime) -> int:
-    from app.sharepoint import list_files
+    from app.sharepoint import list_files, resolve_token_and_drive
 
     SUPPORTED_EXTENSIONS = {".txt", ".md", ".csv", ".pdf", ".docx", ".pptx", ".xlsx"}
     indexed = 0
     skipped_ext = 0
+
+    token, drive_base = await resolve_token_and_drive(**sp_kwargs, drive_name=drive_name)
+    auth_headers = {"Authorization": f"Bearer {token}"}
 
     async def collect_files(folder: str) -> list[dict]:
         try:
@@ -121,12 +124,12 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
             skipped_ext += 1
             continue
 
-        download_url = f.get("download_url")
-        if not download_url:
-            continue
-
         try:
-            resp = await http.get(download_url)
+            resp = await http.get(
+                f"{drive_base}/items/{f['id']}/content",
+                headers=auth_headers,
+                follow_redirects=True,
+            )
             resp.raise_for_status()
             raw = resp.content
         except Exception as e:
