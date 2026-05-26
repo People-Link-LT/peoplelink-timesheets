@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 800      # words per chunk
 CHUNK_OVERLAP = 100   # word overlap between chunks
+MAX_CHUNKS_PER_FILE = 8  # cap per file so large docs don't dominate the index
 INVENIAS_SUBDOMAIN = "peoplelink"
 
 
@@ -170,7 +171,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
             logger.error(f"[{drive_name}] Text extraction failed for {name}: {e}")
             continue
 
-        chunks = _chunk_text(full_text)
+        chunks = _chunk_text(full_text)[:MAX_CHUNKS_PER_FILE]
         if not chunks:
             continue
 
@@ -182,6 +183,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
             )
         )
 
+        file_indexed = 0
         for i, chunk_text_content in enumerate(chunks):
             try:
                 embedding = await embed_text(chunk_text_content)
@@ -199,9 +201,12 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
                 embedding=embedding,
                 indexed_at=now,
             ))
-            indexed += 1
+            file_indexed += 1
 
-    db.commit()
+        # Commit per file so progress is preserved if interrupted
+        db.commit()
+        indexed += file_indexed
+
     logger.info(f"[{drive_name}] Skipped {skipped_ext} files with unsupported extensions")
     return indexed
 
