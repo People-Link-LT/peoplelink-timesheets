@@ -11,7 +11,7 @@
       {% if current_drive %}
       <span class="text-gray-300">/</span>
       {% if breadcrumb %}
-        <a href="/documents?drive={{ current_drive | urlencode }}" class="hover:text-blue-600">{{ current_drive }}</a>
+        <a href="/documents/browse?drive={{ current_drive | urlencode }}" class="hover:text-blue-600">{{ current_drive }}</a>
       {% else %}
         <span class="text-gray-700">{{ current_drive }}</span>
       {% endif %}
@@ -21,9 +21,12 @@
       {% if loop.last %}
         <span class="text-gray-700">{{ part }}</span>
       {% else %}
-        <a href="/documents?drive={{ current_drive | urlencode }}&folder={{ path_so_far | urlencode }}" class="hover:text-blue-600">{{ part }}</a>
+        <a href="/documents/browse?drive={{ current_drive | urlencode }}&folder={{ path_so_far | urlencode }}" class="hover:text-blue-600">{{ part }}</a>
       {% endif %}
       {% endfor %}
+      {% elif current_folder %}
+      <span class="text-gray-300">/</span>
+      <span class="text-gray-700">{{ current_folder }}</span>
       {% endif %}
     </div>
   </div>
@@ -558,9 +561,9 @@ document.querySelectorAll('#file-table tbody tr').forEach(row => {
     if (e.target.closest('a,button')) return;
     if (isFolder) {
       if (!currentDrive) {
-        window.location.href = `/documents?drive=${encodeURIComponent(name)}`;
+        window.location.href = `/documents/browse?drive=${encodeURIComponent(name)}`;
       } else {
-        window.location.href = `/documents?drive=${encodeURIComponent(currentDrive)}&folder=${encodeURIComponent(folderPath)}`;
+        window.location.href = `/documents/browse?drive=${encodeURIComponent(currentDrive)}&folder=${encodeURIComponent(folderPath)}`;
       }
     } else {
       openViewer(name, itemId, dlUrl, webUrl, mime);

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Dokumentų biblioteka — PeopleLink Central{% endblock %}
+{% block content %}
+
+<div class="mb-6">
+  <h1 class="text-xl font-semibold text-gray-900">Dokumentų biblioteka</h1>
+  <p class="text-sm text-gray-400 mt-0.5">Select a category to browse documents</p>
+</div>
+
+{# audience colour helper #}
+{% macro audience_chip(a) %}
+  <span class="text-xs px-1.5 py-0.5 rounded font-medium
+    {% if a == 'Managers' %}bg-blue-100 text-blue-700
+    {% elif a == 'Everybody' %}bg-green-100 text-green-700
+    {% elif a == 'Admin' %}bg-amber-100 text-amber-700
+    {% else %}bg-purple-100 text-purple-700{% endif %}">{{ a }}</span>
+{% endmacro %}
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+  {% for cat in categories %}
+  {% set meta = metas.get(cat.key, {}) %}
+  <div class="bg-white rounded-2xl border border-gray-200 hover:border-blue-300
+              hover:shadow-md transition-all group flex flex-col">
+
+    {# Clickable area → browse #}
+    <a href="{{ cat.browse_url }}"
+       class="flex-1 px-5 pt-5 pb-3 block">
+      <div class="flex items-start justify-between gap-2">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0
+                    {{ cat.color_bg }}">
+          <svg class="w-5 h-5 {{ cat.color_icon }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {{ cat.icon_svg | safe }}
+          </svg>
+        </div>
+        {% if cat.browse_url %}
+        <span class="text-gray-300 group-hover:text-blue-400 transition-colors mt-1 text-lg leading-none">→</span>
+        {% endif %}
+      </div>
+      <p class="font-semibold text-gray-900 text-sm mt-3 leading-snug">{{ cat.name }}</p>
+
+      {# Comment #}
+      {% if meta.get('comment') %}
+        <p class="text-xs text-gray-400 mt-1.5 line-clamp-2">{{ meta['comment'] }}</p>
+      {% else %}
+        <p class="text-xs text-gray-300 italic mt-1.5">No description yet</p>
+      {% endif %}
+
+      {# Audience #}
+      {% if meta.get('audience') %}
+      <div class="flex flex-wrap gap-1 mt-2">
+        {% for a in meta['audience'] %}{{ audience_chip(a) }}{% endfor %}
+      </div>
+      {% endif %}
+    </a>
+
+    {# Edit row #}
+    <div class="px-5 pb-4 flex items-center justify-between border-t border-gray-50 pt-3">
+      <span class="text-xs text-gray-300">{{ cat.name }}</span>
+      <button onclick="openMeta(event, '{{ cat.key }}', {{ cat.name | tojson }}, {{ meta.get('comment','') | tojson }}, {{ (meta.get('audience') or []) | tojson }})"
+              class="text-gray-300 hover:text-blue-500 transition-colors"
+              title="Edit description &amp; audience">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15.232 5.232l3.536 3.536M9 11l6-6 3 3-6 6H9v-3z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+
+{# ── meta edit modal ─────────────────────────────────────────────────────── #}
+<div id="meta-backdrop"
+     class="fixed inset-0 bg-black/40 z-40 hidden"
+     onclick="closeMeta()"></div>
+
+<div id="meta-modal"
+     class="fixed inset-x-4 bottom-4 z-50 bg-white rounded-2xl shadow-2xl
+            translate-y-[120%] transition-transform duration-250 ease-out
+            sm:inset-auto sm:top-1/2 sm:left-1/2 sm:w-96 sm:rounded-2xl"
+     style="max-width:420px">
+
+  <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+    <div>
+      <p class="font-semibold text-gray-900 text-sm">Edit description</p>
+      <p id="meta-cat-name" class="text-xs text-gray-400 mt-0.5"></p>
+    </div>
+    <button onclick="closeMeta()"
+            class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 text-lg leading-none">✕</button>
+  </div>
+
+  <div class="px-5 py-4 space-y-4">
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Description</label>
+      <textarea id="meta-comment" rows="3"
+                placeholder="What does this category contain?"
+                class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                       resize-none placeholder-gray-300"></textarea>
+      <p class="text-xs text-gray-400 mt-1">Indexed by Ask PL — helps find documents faster.</p>
+    </div>
+
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Audience</label>
+      <div class="flex flex-wrap gap-2">
+        <button type="button" data-audience="Managers"    onclick="toggleAudience(this)"
+                class="audience-btn border border-blue-300   text-blue-700   bg-blue-50   rounded-full px-3 py-1 text-xs font-medium transition-all opacity-60">Managers</button>
+        <button type="button" data-audience="Everybody"   onclick="toggleAudience(this)"
+                class="audience-btn border border-green-300  text-green-700  bg-green-50  rounded-full px-3 py-1 text-xs font-medium transition-all opacity-60">Everybody</button>
+        <button type="button" data-audience="Admin"       onclick="toggleAudience(this)"
+                class="audience-btn border border-amber-300  text-amber-700  bg-amber-50  rounded-full px-3 py-1 text-xs font-medium transition-all opacity-60">Admin</button>
+        <button type="button" data-audience="Freelancers" onclick="toggleAudience(this)"
+                class="audience-btn border border-purple-300 text-purple-700 bg-purple-50 rounded-full px-3 py-1 text-xs font-medium transition-all opacity-60">Freelancers</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="px-5 pb-5 flex gap-3">
+    <button onclick="saveMeta()" id="meta-save-btn"
+            class="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-xl transition-colors">Save</button>
+    <button onclick="closeMeta()"
+            class="px-4 py-2.5 text-sm text-gray-500 border border-gray-200 hover:bg-gray-50 rounded-xl transition-colors">Cancel</button>
+  </div>
+</div>
+
+
+<script>
+const AUDIENCE_COLORS = {
+  Managers:    'bg-blue-100 text-blue-700',
+  Everybody:   'bg-green-100 text-green-700',
+  Admin:       'bg-amber-100 text-amber-700',
+  Freelancers: 'bg-purple-100 text-purple-700',
+};
+
+let _currentKey = null;
+
+function openMeta(event, key, name, comment, audience) {
+  event.preventDefault();
+  event.stopPropagation();
+  _currentKey = key;
+
+  document.getElementById('meta-cat-name').textContent = name;
+  document.getElementById('meta-comment').value = comment || '';
+
+  document.querySelectorAll('#meta-modal .audience-btn').forEach(btn => {
+    const sel = (audience || []).includes(btn.dataset.audience);
+    btn.setAttribute('aria-pressed', sel ? 'true' : 'false');
+    btn.style.opacity    = sel ? '1' : '0.6';
+    btn.style.fontWeight = sel ? '600' : '';
+    btn.style.boxShadow  = sel ? '0 0 0 2px currentColor' : '';
+  });
+
+  document.getElementById('meta-backdrop').classList.remove('hidden');
+  requestAnimationFrame(() => {
+    document.getElementById('meta-modal').style.transform = 'translateY(0)';
+  });
+  document.getElementById('meta-comment').focus();
+}
+
+function toggleAudience(btn) {
+  const pressed = btn.getAttribute('aria-pressed') === 'true';
+  btn.setAttribute('aria-pressed', pressed ? 'false' : 'true');
+  btn.style.opacity    = !pressed ? '1' : '0.6';
+  btn.style.fontWeight = !pressed ? '600' : '';
+  btn.style.boxShadow  = !pressed ? '0 0 0 2px currentColor' : '';
+}
+
+function closeMeta() {
+  document.getElementById('meta-modal').style.transform = 'translateY(120%)';
+  document.getElementById('meta-backdrop').classList.add('hidden');
+  _currentKey = null;
+}
+
+async function saveMeta() {
+  if (!_currentKey) return;
+  const btn = document.getElementById('meta-save-btn');
+  btn.textContent = 'Saving…'; btn.disabled = true;
+
+  const comment  = document.getElementById('meta-comment').value.trim();
+  const audience = [...document.querySelectorAll('#meta-modal .audience-btn[aria-pressed="true"]')]
+                     .map(b => b.dataset.audience);
+
+  try {
+    const resp = await fetch('/documents/api/meta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: _currentKey, drive: '', path: '', name: _currentKey, comment, audience }),
+    });
+    if (!(await resp.json()).ok) throw new Error('Save failed');
+    // Reload to refresh tile
+    location.reload();
+  } catch (err) {
+    alert('Could not save: ' + err.message);
+    btn.textContent = 'Save'; btn.disabled = false;
+  }
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMeta(); });
+</script>
+
+{% endblock %}

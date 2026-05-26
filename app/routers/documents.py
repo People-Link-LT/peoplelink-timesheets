@@ -43,10 +43,131 @@ def _sp_kwargs(drive_name: str = "") -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Category definitions — maps the 8 SharePoint library categories
+# ---------------------------------------------------------------------------
+
+_CATEGORIES = [
+    {
+        "name": "Aktualūs dokumentai",
+        "key":  "cat::Aktualūs dokumentai",
+        "drive": "Aktualūs dokumentai",
+        "folder": "",
+        "color_bg":   "bg-blue-50",
+        "color_icon": "text-blue-500",
+        "icon_svg": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>',
+    },
+    {
+        "name": "Veiklos dokumentai",
+        "key":  "cat::Veiklos dokumentai",
+        "drive": "Procesai ir KPI",
+        "folder": "",
+        "color_bg":   "bg-indigo-50",
+        "color_icon": "text-indigo-500",
+        "icon_svg": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>',
+    },
+    {
+        "name": "Darbuotojų dokumentai",
+        "key":  "cat::Darbuotojų dokumentai",
+        "drive": "Kiti dokumentai",
+        "folder": "",
+        "color_bg":   "bg-green-50",
+        "color_icon": "text-green-500",
+        "icon_svg": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>',
+    },
+    {
+        "name": "Turtas ir jo valdymas",
+        "key":  "cat::Turtas ir jo valdymas",
+        "drive": "",
+        "folder": "",
+        "color_bg":   "bg-amber-50",
+        "color_icon": "text-amber-500",
+        "icon_svg": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>',
+    },
+    {
+        "name": "Admin dokumentai",
+        "key":  "cat::Admin dokumentai",
+        "drive": "",
+        "folder": "",
+        "color_bg":   "bg-gray-50",
+        "color_icon": "text-gray-500",
+        "icon_svg": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>',
+    },
+    {
+        "name": "Klientų dokumentai",
+        "key":  "cat::Klientų dokumentai",
+        "drive": "",
+        "folder": "Sutartys su klientais",
+        "color_bg":   "bg-rose-50",
+        "color_icon": "text-rose-500",
+        "icon_svg": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>',
+    },
+    {
+        "name": "Consulting projects",
+        "key":  "cat::Consulting projects",
+        "drive": "People Link methods",
+        "folder": "",
+        "color_bg":   "bg-purple-50",
+        "color_icon": "text-purple-500",
+        "icon_svg": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>',
+    },
+    {
+        "name": "Freelanceriams",
+        "key":  "cat::Freelanceriams",
+        "drive": "",
+        "folder": "Freelance ir praktikos sutartys",
+        "color_bg":   "bg-teal-50",
+        "color_icon": "text-teal-500",
+        "icon_svg": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>',
+    },
+]
+
+
+def _category_browse_url(cat: dict) -> str:
+    drive  = cat.get("drive", "")
+    folder = cat.get("folder", "")
+    if not drive and not folder:
+        return ""
+    params = []
+    if drive:
+        params.append(f"drive={drive}")
+    if folder:
+        params.append(f"folder={folder}")
+    return "/documents/browse?" + "&".join(params)
+
+
+# ---------------------------------------------------------------------------
 # Browse
 # ---------------------------------------------------------------------------
 
 @router.get("", response_class=HTMLResponse)
+async def library_home(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cat_keys = [c["key"] for c in _CATEGORIES]
+    rows = db.execute(select(DocMeta).where(DocMeta.item_id.in_(cat_keys))).scalars().all()
+    metas = {
+        r.item_id: {
+            "comment":  r.comment or "",
+            "audience": _json.loads(r.audience) if r.audience else [],
+        }
+        for r in rows
+    }
+
+    categories = [
+        {**cat, "browse_url": _category_browse_url(cat)}
+        for cat in _CATEGORIES
+    ]
+
+    return templates.TemplateResponse(request, "documents/library.html", {
+        "user": user,
+        "categories": categories,
+        "metas": metas,
+    })
+
+
+@router.get("/browse", response_class=HTMLResponse)
 async def browse(
     request: Request,
     folder: str = "",
@@ -58,7 +179,7 @@ async def browse(
 
     if _sp_configured():
         try:
-            if not drive:
+            if not drive and not folder:
                 from app.sharepoint import list_drives
                 files = await list_drives(**_sp_base_kwargs())
             else:
