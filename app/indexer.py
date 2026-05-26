@@ -134,6 +134,19 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
             skipped_size += 1
             continue
 
+        # Incremental: skip if already indexed and not modified since
+        file_modified_str = f.get("modified", "")
+        if file_modified_str:
+            file_modified = datetime.fromisoformat(file_modified_str.replace("Z", "+00:00"))
+            existing = db.execute(
+                select(KnowledgeChunk.indexed_at).where(
+                    KnowledgeChunk.source_type == "sharepoint",
+                    KnowledgeChunk.source_id == f["id"],
+                )
+            ).scalar_one_or_none()
+            if existing is not None and existing >= file_modified:
+                continue  # Already up to date
+
         try:
             resp = await http.get(
                 f"{drive_base}/items/{f['id']}/content",
