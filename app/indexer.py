@@ -110,6 +110,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
                 sub_folder = f"{folder}/{item['name']}".lstrip("/") if folder else item["name"]
                 result.extend(await collect_files(sub_folder))
             else:
+                item["folder_path"] = folder
                 result.append(item)
         return result
 
@@ -171,9 +172,14 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
             logger.error(f"[{drive_name}] Text extraction failed for {name}: {e}")
             continue
 
-        chunks = _chunk_text(full_text)[:MAX_CHUNKS_PER_FILE]
-        if not chunks:
+        raw_chunks = _chunk_text(full_text)[:MAX_CHUNKS_PER_FILE]
+        if not raw_chunks:
             continue
+
+        folder_path = f.get("folder_path", "")
+        full_doc_name = f"{folder_path}/{name}" if folder_path else name
+        doc_prefix = f"[Drive: {drive_name}] [File: {full_doc_name}]\n\n"
+        chunks = [doc_prefix + c for c in raw_chunks]
 
         # Delete existing chunks for this file before re-inserting
         db.execute(
@@ -195,7 +201,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
             db.add(KnowledgeChunk(
                 source_type="sharepoint",
                 source_id=chunk_id,
-                source_name=name,
+                source_name=full_doc_name,
                 source_url=f.get("web_url"),
                 content=chunk_text_content,
                 embedding=embedding,
