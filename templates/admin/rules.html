@@ -7,6 +7,11 @@
   Indexing started in the background — this may take a couple of minutes. Ask PL will reflect new knowledge once complete.
 </div>
 {% endif %}
+{% if enrichment_started %}
+<div class="mb-4 bg-purple-50 border border-purple-200 text-purple-800 text-sm px-4 py-3 rounded-lg">
+  Enrichment started in the background — GPT-4o-mini is classifying documents. This may take a few minutes.
+</div>
+{% endif %}
 <div class="mb-6 flex items-center justify-between">
   <div>
     <h1 class="text-xl font-semibold text-gray-900">Ask PL — Rules & Principles</h1>
@@ -20,7 +25,14 @@
       </span>
     </p>
   </div>
-  <div class="flex gap-2">
+  <div class="flex gap-2 items-center">
+    <span class="text-xs text-gray-400">{{ enriched_files }}/{{ total_files }} enriched</span>
+    <form method="post" action="/ask/admin/enrich-now">
+      <input type="hidden" name="force" value="0"/>
+      <button type="submit" class="text-sm border border-purple-300 text-purple-700 hover:bg-purple-50 px-4 py-2 rounded-lg">
+        Enrich metadata
+      </button>
+    </form>
     <form method="post" action="/ask/admin/index-now">
       <button type="submit" class="text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg">
         Re-index knowledge

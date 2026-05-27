@@ -55,14 +55,21 @@ async def ask_query(
 # ---------------------------------------------------------------------------
 
 @router.get("/admin/rules", response_class=HTMLResponse)
-def rules_page(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin), indexed: str = ""):
+def rules_page(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin), indexed: str = "", enriched: str = ""):
     from app.config import settings as _s
+    from app.models import FileCatalog
+    from sqlalchemy import func
     rules = db.execute(select(AskRule).order_by(AskRule.priority, AskRule.created_at)).scalars().all()
+    total_files = db.execute(select(func.count(FileCatalog.id))).scalar() or 0
+    enriched_files = db.execute(select(func.count(FileCatalog.id)).where(FileCatalog.enriched_at.isnot(None))).scalar() or 0
     return templates.TemplateResponse(request, "admin/rules.html", {
         "user": admin,
         "rules": rules,
         "indexing_started": bool(indexed),
+        "enrichment_started": bool(enriched),
         "anthropic_key": bool(_s.anthropic_api_key),
+        "total_files": total_files,
+        "enriched_files": enriched_files,
     })
 
 
@@ -102,6 +109,13 @@ def trigger_index(admin: User = Depends(get_current_admin)):
     from app.indexer import run_indexing_sync
     threading.Thread(target=run_indexing_sync, daemon=True).start()
     return RedirectResponse("/ask/admin/rules?indexed=1", status_code=302)
+
+
+@router.post("/admin/enrich-now")
+def trigger_enrich(force: str = Form(""), admin: User = Depends(get_current_admin)):
+    from app.enricher import run_enrichment_sync
+    threading.Thread(target=run_enrichment_sync, kwargs={"force": force == "1"}, daemon=True).start()
+    return RedirectResponse("/ask/admin/rules?enriched=1", status_code=302)
 
 
 @router.get("/admin/stats")

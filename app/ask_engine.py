@@ -32,11 +32,19 @@ CHAT_MODEL_ANTHROPIC = "claude-haiku-4-5-20251001"  # upgrade to claude-sonnet-4
 TOP_K = 3           # 10K token/min rate limit: 3 chunks + tool round stays ~8K total
 MAX_FILE_RESULTS = 20
 
-# Keyword filters per document type (matched against the diacritic-stripped catalog text)
+# Keyword filters per document type (matched against name_norm — fallback for unenriched rows)
 _DOC_TYPE_KEYWORDS = {
     "invoice":  ["saskait", "faktura", "invoice"],
     "proposal": ["pasiulym", "proposal"],
     "contract": ["sutart", "contract"],
+}
+
+# Maps the tool's doc_type strings to internal enriched doc_type values
+_DOC_TYPE_INTERNAL: dict[str, list[str]] = {
+    "invoice":  ["invoice"],
+    "proposal": ["proposal"],
+    "contract": ["client_contract", "supplier_contract", "nda", "employment_contract",
+                 "freelance_contract", "loan_contract"],
 }
 
 SEARCH_FILES_TOOL = {
@@ -71,14 +79,37 @@ def _normalize(s: str) -> str:
 
 
 def search_files(db: Session, query: str, doc_type: str | None = None, limit: int = MAX_FILE_RESULTS) -> list[FileCatalog]:
-    terms = [t for t in _normalize(query or "").split() if len(t) > 1]
+    norm_q = _normalize(query or "").strip()
+    internal_types = _DOC_TYPE_INTERNAL.get(doc_type or "", []) if doc_type and doc_type != "any" else []
+
+    def _type_filter(stmt):
+        if not doc_type or doc_type == "any":
+            return stmt
+        conditions = []
+        if internal_types:
+            conditions.append(FileCatalog.doc_type.in_(internal_types))
+        kws = _DOC_TYPE_KEYWORDS.get(doc_type, [])
+        if kws:
+            conditions.append(or_(*[FileCatalog.name_norm.like(f"%{k}%") for k in kws]))
+        return stmt.where(or_(*conditions)) if conditions else stmt
+
+    # Phase 1: company_norm match — precise, uses AI-enriched data
+    if norm_q:
+        stmt = select(FileCatalog).where(
+            FileCatalog.company_norm.like(f"%{norm_q}%")
+        )
+        stmt = _type_filter(stmt)
+        stmt = stmt.order_by(nullslast(FileCatalog.modified.desc())).limit(limit)
+        results = list(db.execute(stmt).scalars().all())
+        if results:
+            return results
+
+    # Phase 2: name_norm LIKE fallback (unenriched rows or broader keyword search)
+    terms = [t for t in norm_q.split() if len(t) > 1]
     stmt = select(FileCatalog)
     if terms:
         stmt = stmt.where(or_(*[FileCatalog.name_norm.like(f"%{t}%") for t in terms]))
-    if doc_type and doc_type != "any":
-        kws = _DOC_TYPE_KEYWORDS.get(doc_type, [])
-        if kws:
-            stmt = stmt.where(or_(*[FileCatalog.name_norm.like(f"%{k}%") for k in kws]))
+    stmt = _type_filter(stmt)
     stmt = stmt.order_by(nullslast(FileCatalog.modified.desc())).limit(limit)
     return list(db.execute(stmt).scalars().all())
 
@@ -87,20 +118,27 @@ def _format_file_results(rows: list[FileCatalog], limit: int = MAX_FILE_RESULTS)
     if not rows:
         return "No matching files found in the catalog."
 
-    # Group by drive/folder so Claude sees company context clearly
     from collections import defaultdict
+    # Group by company (enriched) or folder path (fallback)
     groups: dict[str, list[FileCatalog]] = defaultdict(list)
     for r in rows:
-        folder_key = f"{r.drive}/{r.folder_path}".rstrip("/")
-        groups[folder_key].append(r)
+        group_key = r.company or f"{r.drive}/{r.folder_path}".rstrip("/")
+        groups[group_key].append(r)
 
-    lines = [f"Found {len(rows)} file(s) across {len(groups)} folder(s):"]
-    for folder_key, files in groups.items():
-        lines.append(f"\nFolder: {folder_key}/ ({len(files)} files)")
+    lines = [f"Found {len(rows)} file(s) across {len(groups)} group(s):"]
+    for group_key, files in groups.items():
+        # Show doc_type for this group if consistent
+        types = {f.doc_type for f in files if f.doc_type}
+        type_label = f" [{', '.join(sorted(types))}]" if types else ""
+        lines.append(f"\n{group_key}{type_label} ({len(files)} files)")
         for r in files:
             date = r.modified.date().isoformat() if r.modified else "?"
             url = r.web_url or ""
-            lines.append(f"  - {r.name} | {date} | {url}")
+            parts = [r.name, date]
+            if r.doc_number:
+                parts.append(f"Nr.{r.doc_number}")
+            parts.append(url)
+            lines.append(f"  - {' | '.join(parts)}")
 
     if len(rows) >= limit:
         lines.append("\n_(Showing newest 20 — there may be more. Narrow your search with a date or keyword.)_")
@@ -171,7 +209,9 @@ async def ask_stream(
     for chunk in chunks:
         date_str = chunk.modified.date().isoformat() if getattr(chunk, "modified", None) else ""
         header = f"[{chunk.source_name}{' | ' + date_str if date_str else ''}]"
-        context_parts.append(f"{header}\n{chunk.content}")
+        # Prepend AI summary as a quick orientation for Claude before the full content
+        summary_prefix = f"Summary: {chunk.ai_summary}\n\n" if getattr(chunk, "ai_summary", None) else ""
+        context_parts.append(f"{header}\n{summary_prefix}{chunk.content}")
         base_id = chunk.source_id.split("::")[0]
         if base_id not in seen_sources:
             seen_sources[base_id] = {"name": chunk.source_name, "url": chunk.source_url or ""}

@@ -125,6 +125,10 @@ class KnowledgeChunk(Base):
     embedding = mapped_column(Vector(1536), nullable=True)
     modified: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     indexed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    # AI-generated enrichment
+    ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_topics: Mapped[str | None] = mapped_column(Text, nullable=True)   # JSON array
+    ai_applies_to: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
 
 class DocMeta(Base):
@@ -162,6 +166,14 @@ class FileCatalog(Base):
     size: Mapped[int] = mapped_column(Integer, default=0)
     modified: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     indexed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    # AI-enriched metadata
+    doc_type: Mapped[str | None] = mapped_column(String(40), nullable=True)   # invoice, proposal, contract, policy, …
+    company: Mapped[str | None] = mapped_column(String(255), nullable=True)   # display name from folder
+    company_norm: Mapped[str | None] = mapped_column(String(255), nullable=True)  # normalized for search
+    doc_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    doc_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    doc_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    enriched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class AskRule(Base):

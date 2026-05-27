@@ -73,3 +73,38 @@ def init_db():
             conn.commit()
         except Exception:
             conn.rollback()
+        # AI enrichment columns — file_catalog
+        for col, definition in [
+            ("doc_type",     "VARCHAR(40)"),
+            ("company",      "VARCHAR(255)"),
+            ("company_norm", "VARCHAR(255)"),
+            ("doc_number",   "VARCHAR(50)"),
+            ("doc_year",     "INTEGER"),
+            ("doc_month",    "INTEGER"),
+            ("enriched_at",  "TIMESTAMP"),
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE file_catalog ADD COLUMN {col} {definition}"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+        # AI enrichment columns — knowledge_chunks
+        for col, definition in [
+            ("ai_summary",    "TEXT"),
+            ("ai_topics",     "TEXT"),
+            ("ai_applies_to", "VARCHAR(50)"),
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE knowledge_chunks ADD COLUMN {col} {definition}"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+        # Index on company_norm for fast company search
+        try:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS file_catalog_company_norm_trgm "
+                "ON file_catalog USING gin (company_norm gin_trgm_ops)"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
