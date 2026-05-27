@@ -158,6 +158,9 @@ def logout():
     return response
 
 
+COOKIE_REG = "pl_reg"
+
+
 @router.get("/register", response_class=HTMLResponse)
 def register_page(request: Request):
     return templates.TemplateResponse(request, "register.html", {"error": None})
@@ -166,18 +169,115 @@ def register_page(request: Request):
 @router.post("/register", response_class=HTMLResponse)
 def register_submit(
     request: Request,
+    background_tasks: BackgroundTasks,
     full_name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
     db: Session = Depends(get_db),
 ):
     email = email.lower().strip()
+
+    if not email.endswith("@peoplelink.lt"):
+        return templates.TemplateResponse(
+            request, "register.html",
+            {"error": "Only @peoplelink.lt email addresses can register."}
+        )
+
     if db.query(User).filter(User.email == email).first():
         return templates.TemplateResponse(
             request, "register.html",
             {"error": "An account with this email already exists."}
         )
-    user = User(email=email, full_name=full_name, password_hash=hash_password(password))
+
+    user = User(
+        email=email,
+        full_name=full_name.strip(),
+        password_hash=hash_password(password),
+        is_approved=False,
+        is_2fa_enabled=True,
+        twofa_method="email",
+    )
     db.add(user)
     db.commit()
-    return templates.TemplateResponse(request, "register.html", {"error": None, "success": True})
+    db.refresh(user)
+
+    _send_email_otp(user, db, background_tasks)
+
+    pending_token = create_2fa_pending_token(user.id, "email")
+    response = RedirectResponse("/register/verify", status_code=302)
+    response.set_cookie(COOKIE_REG, pending_token, httponly=True, samesite="lax", secure=True, max_age=600)
+    return response
+
+
+@router.get("/register/verify", response_class=HTMLResponse)
+def register_verify_page(request: Request, db: Session = Depends(get_db)):
+    pending = request.cookies.get(COOKIE_REG)
+    info = verify_2fa_pending_token(pending) if pending else None
+    if not info:
+        return RedirectResponse("/register", status_code=302)
+    user = db.get(User, info["user_id"])
+    if not user:
+        return RedirectResponse("/register", status_code=302)
+    email_hint = user.email[:3] + "***" + user.email[user.email.index("@"):]
+    return templates.TemplateResponse(request, "register_verify.html", {
+        "error": None, "email_hint": email_hint,
+    })
+
+
+@router.post("/register/verify", response_class=HTMLResponse)
+def register_verify_submit(
+    request: Request,
+    code: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    pending = request.cookies.get(COOKIE_REG)
+    info = verify_2fa_pending_token(pending) if pending else None
+    if not info:
+        return RedirectResponse("/register", status_code=302)
+
+    user = db.get(User, info["user_id"])
+    if not user:
+        return RedirectResponse("/register", status_code=302)
+
+    now = datetime.now(timezone.utc)
+    expires = user.email_otp_expires_at
+    if expires and expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+
+    valid = bool(user.email_otp) and code.strip() == user.email_otp and expires and now < expires
+
+    if not valid:
+        email_hint = user.email[:3] + "***" + user.email[user.email.index("@"):]
+        return templates.TemplateResponse(request, "register_verify.html", {
+            "error": "Invalid or expired code. Try again.",
+            "email_hint": email_hint,
+        })
+
+    user.is_approved = True
+    user.email_otp = None
+    user.email_otp_expires_at = None
+    db.commit()
+
+    response = RedirectResponse("/timesheet", status_code=302)
+    _set_auth_cookie(response, user.id)
+    response.delete_cookie(COOKIE_REG)
+    return response
+
+
+@router.post("/register/verify/resend", response_class=HTMLResponse)
+def register_verify_resend(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    pending = request.cookies.get(COOKIE_REG)
+    info = verify_2fa_pending_token(pending) if pending else None
+    if not info:
+        return RedirectResponse("/register", status_code=302)
+    user = db.get(User, info["user_id"])
+    if user:
+        _send_email_otp(user, db, background_tasks)
+    email_hint = user.email[:3] + "***" + user.email[user.email.index("@"):] if user else ""
+    return templates.TemplateResponse(request, "register_verify.html", {
+        "error": None, "email_hint": email_hint, "resent": True,
+    })
