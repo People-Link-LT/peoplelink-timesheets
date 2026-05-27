@@ -602,6 +602,8 @@ function closeMeta() {
   document.getElementById('meta-modal').style.transform = 'translateY(100%)';
   document.getElementById('meta-backdrop').classList.add('hidden');
   _metaRow = null;
+  _metaSubKey = null;
+  _metaSubDrive = null;
 }
 
 async function saveMeta() {
@@ -628,12 +630,14 @@ async function saveMeta() {
     const data = await resp.json();
     if (!data.ok) throw new Error(data.error || 'Save failed');
 
-    // Update row data attrs
-    _metaRow.dataset.comment  = comment;
-    _metaRow.dataset.audience = JSON.stringify(audience);
+    if (_metaRow) {
+      // Update file table row data attrs and inline cell
+      _metaRow.dataset.comment  = comment;
+      _metaRow.dataset.audience = JSON.stringify(audience);
+    }
 
-    // Update the comment cell (desktop column)
-    const cell = _metaRow.querySelector('.comment-cell');
+    // Update the comment cell (desktop column) — only exists in file table rows
+    const cell = _metaRow ? _metaRow.querySelector('.comment-cell') : null;
     if (cell) {
       let html = '';
       if (comment) {
