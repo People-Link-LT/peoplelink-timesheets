@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date
 from sqlalchemy import (
-    String, Boolean, Integer, DateTime, Date, ForeignKey, UniqueConstraint, func, Text
+    String, Boolean, Integer, BigInteger, DateTime, Date, ForeignKey, UniqueConstraint, func, Text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
@@ -163,7 +163,7 @@ class FileCatalog(Base):
     name_norm: Mapped[str] = mapped_column(Text, nullable=False, default="")  # diacritic-stripped "drive/folder/name" for search
     ext: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     web_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
-    size: Mapped[int] = mapped_column(Integer, default=0)
+    size: Mapped[int] = mapped_column(BigInteger, default=0)
     modified: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     indexed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     # AI-enriched metadata
@@ -185,3 +185,15 @@ class AskRule(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     priority: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+class DriveSync(Base):
+    """Stores Microsoft Graph delta links for incremental SharePoint crawling."""
+    __tablename__ = "drive_sync"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    drive_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    catalog_delta_link: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_delta_link: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_catalog_sync: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_content_sync: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

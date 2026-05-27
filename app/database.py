@@ -108,3 +108,9 @@ def init_db():
             conn.commit()
         except Exception:
             conn.rollback()
+        # Widen file_catalog.size to BIGINT (files >2 GB overflow INTEGER)
+        try:
+            conn.execute(text("ALTER TABLE file_catalog ALTER COLUMN size TYPE BIGINT"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
