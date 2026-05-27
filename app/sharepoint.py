@@ -192,6 +192,11 @@ async def list_files(
     folder: str = "",
     drive_name: str = "",
 ) -> list[dict]:
+    cache_key = f"files:{site_hostname}:{site_path}:{drive_name}:{folder}"
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached
+
     token = await _get_token(tenant_id, client_id, client_secret)
     auth = {"Authorization": f"Bearer {token}"}
 
@@ -226,7 +231,10 @@ async def list_files(
                 "mime_type": item.get("file", {}).get("mimeType", "") if "file" in item else "",
             })
 
-        return sorted(result, key=lambda x: (not x["is_folder"], x["name"].lower()))
+        result = sorted(result, key=lambda x: (not x["is_folder"], x["name"].lower()))
+
+    _cache_set(cache_key, result, 300)  # 5-min TTL — fast repeat visits
+    return result
 
 
 async def get_file_stream(

@@ -27,7 +27,7 @@ Be concise and professional. For list-style questions, use bullet points."""
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL_OPENAI = "gpt-4o-mini"
-CHAT_MODEL_ANTHROPIC = "claude-sonnet-4-6"
+CHAT_MODEL_ANTHROPIC = "claude-haiku-4-5-20251001"
 TOP_K = 15
 MAX_FILE_RESULTS = 60
 

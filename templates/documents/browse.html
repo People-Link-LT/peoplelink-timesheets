@@ -247,12 +247,12 @@
             </button>
             {% if f.is_folder %}
               <span class="text-gray-300 text-xs">↵</span>
-            {% elif f.download_url %}
-              <a href="{{ f.download_url }}"
+            {% elif f.download_url or f.web_url %}
+              <a href="{{ f.download_url or f.web_url }}"
                  class="text-gray-400 hover:text-blue-600 text-xs"
-                 title="Download"
+                 title="{{ 'Download' if f.download_url else 'Open' }}"
                  onclick="event.stopPropagation()"
-                 download>↓</a>
+                 {% if f.download_url %}download{% else %}target="_blank"{% endif %}>↓</a>
             {% endif %}
           </div>
         </td>
@@ -445,14 +445,15 @@ function openViewer(name, itemId, downloadUrl, webUrl, mimeType) {
 
   const cat = fileCategory(name);
 
-  if (cat === 'pdf' && downloadUrl) {
+  if (cat === 'pdf') {
     const driveParam = currentDrive ? `?drive=${encodeURIComponent(currentDrive)}` : '';
     content.innerHTML = `<iframe src="/documents/file/${itemId}${driveParam}" class="w-full h-full border-0" title="${name}"></iframe>`;
-  } else if (cat === 'office' && downloadUrl) {
-    const encoded = encodeURIComponent(downloadUrl);
-    content.innerHTML = `<iframe src="https://view.officeapps.live.com/op/embed.aspx?src=${encoded}" class="w-full h-full border-0" title="${name}" allowfullscreen></iframe>`;
-  } else if (cat === 'image' && downloadUrl) {
-    content.innerHTML = `<div class="h-full flex items-center justify-center p-6 bg-gray-50 overflow-auto"><img src="${downloadUrl}" alt="${name}" class="max-w-full max-h-full object-contain rounded shadow"></div>`;
+  } else if (cat === 'office' && webUrl) {
+    // SharePoint native embed — works with existing M365 session, no pre-signed URL needed
+    content.innerHTML = `<iframe src="${webUrl}?action=embedview&wdStartOn=1" class="w-full h-full border-0" title="${name}" allowfullscreen></iframe>`;
+  } else if (cat === 'image') {
+    const imgSrc = downloadUrl || `/documents/file/${itemId}${currentDrive ? '?drive=' + encodeURIComponent(currentDrive) : ''}`;
+    content.innerHTML = `<div class="h-full flex items-center justify-center p-6 bg-gray-50 overflow-auto"><img src="${imgSrc}" alt="${name}" class="max-w-full max-h-full object-contain rounded shadow"></div>`;
   } else if (cat === 'text' && itemId) {
     loading.classList.remove('hidden');
     const driveParam2 = currentDrive ? `?drive=${encodeURIComponent(currentDrive)}` : '';
