@@ -27,9 +27,9 @@ Be concise and professional. For list-style questions, use bullet points."""
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL_OPENAI = "gpt-4o-mini"
-CHAT_MODEL_ANTHROPIC = "claude-haiku-4-5-20251001"
-TOP_K = 15
-MAX_FILE_RESULTS = 60
+CHAT_MODEL_ANTHROPIC = "claude-haiku-4-5-20251001"  # upgrade to claude-sonnet-4-6 when org rate limit is raised
+TOP_K = 5           # keep both API rounds under 10K tokens/min (org rate limit)
+MAX_FILE_RESULTS = 20
 
 # Keyword filters per document type (matched against the diacritic-stripped catalog text)
 _DOC_TYPE_KEYWORDS = {
