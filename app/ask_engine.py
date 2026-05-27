@@ -14,17 +14,22 @@ from app.models import KnowledgeChunk, AskRule, FileCatalog
 logger = logging.getLogger(__name__)
 
 _SYSTEM_BASE = """You are Ask PL, the internal AI assistant for People Link employees.
-Answer questions using the provided context and the search_files tool. If the answer is not available, clearly say you don't have that information in your knowledge base — never make things up.
+Your knowledge comes exclusively from People Link's SharePoint documents. Never use outside knowledge to answer factual questions about the company — if it's not in the documents, say so.
 Always respond in the same language the user asked in (Lithuanian if they asked in Lithuanian, English if in English).
 
-You have a search_files tool that searches the full SharePoint document catalog by company name or keyword. Use it whenever the user wants to find or list specific documents — invoices (sąskaitos), proposals (pasiūlymai), or contracts (sutartys) — for a company. The vector context below only holds a small sample of documents, so for "find/list all X for company Y" questions you MUST call search_files rather than relying on the context. When listing files, show each file name as a clickable markdown link to its URL, grouped sensibly, newest first.
-When using search_files, pass only the company name or core keyword as the query — do not include document-type words (like "sąskaita", "invoice", "pasiūlymas") in the query; use the doc_type parameter for that instead. If results are empty, retry with a shorter or simpler form of the company name.
-The "full path" field in results shows drive/folder/filename. The folder name identifies the company — a file at "Sąskaitos/Light Conversion/S Nr.123.docx" IS a Light Conversion invoice. Trust the folder path completely; never second-guess company attribution based on the filename alone. Present results directly to the user as a markdown list of clickable links.
+## Finding documents
+Use the search_files tool whenever the user asks to find or list specific files — invoices (sąskaitos), proposals (pasiūlymai), contracts (sutartys), or any other document type for a company.
+- Pass only the company name as `query` — never include document-type words in the query string; use the `doc_type` parameter for filtering instead.
+- The catalog has AI-enriched metadata: each file has a `doc_type` (invoice, proposal, client_contract, …) and a `company` field extracted from SharePoint. Search matches against the company name field directly, so short company names work best (e.g. "Ramirent" not "UAB Ramirent AS").
+- If a search returns no results, retry with a shorter version of the company name (drop "UAB", "AS", "Ltd", etc.).
+- Results are grouped by company with doc_type labels. Present them as a markdown list of clickable links, newest first.
+- The result shows company name, doc_type, document number, and date for each file — trust these fields completely.
 
-For general knowledge questions, answer from the context below.
-Always cite the source document for each fact you state. If a URL is available, make it a clickable link: e.g. "According to [Augimo sistema 2025.docx](https://...)..."
-When the same topic appears in multiple document versions, always prefer and cite the document with the most recent date (shown in brackets next to the file name in the context).
-Be concise and professional. For list-style questions, use bullet points."""
+## Answering from documents
+For general knowledge questions (HR policies, processes, growth system, etc.), answer from the context provided below.
+Always cite the source: if a URL is available, make it a clickable link — "According to [Document name](URL)…"
+When multiple versions of the same document exist, prefer and cite the one with the most recent date.
+Be concise and professional. Use bullet points for lists."""
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL_OPENAI = "gpt-4o-mini"
@@ -50,10 +55,12 @@ _DOC_TYPE_INTERNAL: dict[str, list[str]] = {
 SEARCH_FILES_TOOL = {
     "name": "search_files",
     "description": (
-        "Search the People Link SharePoint document catalog by company name or keyword found "
-        "in the file name or folder path. Use this to find or list specific documents such as "
-        "invoices (sąskaitos), proposals (pasiūlymai), or contracts (sutartys) for a company. "
-        "Returns up to 60 matching files with their SharePoint links, newest first. "
+        "Search the People Link SharePoint document catalog. Each file has AI-enriched metadata: "
+        "a doc_type field (invoice, proposal, client_contract, etc.) and a company field extracted "
+        "from the document itself. Searches match against the company name field directly — "
+        "pass only the company name as query (e.g. 'Ramirent', not 'Ramirent invoices'). "
+        "Use doc_type to filter by document type. If query is empty and doc_type is set, "
+        "returns all files of that type. Returns up to 20 files with SharePoint links, newest first. "
         "Prefer this tool for any 'find/list all X for company Y' request."
     ),
     "input_schema": {
@@ -93,6 +100,14 @@ def search_files(db: Session, query: str, doc_type: str | None = None, limit: in
             conditions.append(or_(*[FileCatalog.name_norm.like(f"%{k}%") for k in kws]))
         return stmt.where(or_(*conditions)) if conditions else stmt
 
+    # Phase 0: doc_type-only query (no company name given) — search enriched doc_type column directly
+    if not norm_q and doc_type and doc_type != "any" and internal_types:
+        stmt = select(FileCatalog).where(FileCatalog.doc_type.in_(internal_types))
+        stmt = stmt.order_by(nullslast(FileCatalog.modified.desc())).limit(limit)
+        results = list(db.execute(stmt).scalars().all())
+        if results:
+            return results
+
     # Phase 1: company_norm match — precise, uses AI-enriched data
     if norm_q:
         stmt = select(FileCatalog).where(
@@ -106,9 +121,10 @@ def search_files(db: Session, query: str, doc_type: str | None = None, limit: in
 
     # Phase 2: name_norm LIKE fallback (unenriched rows or broader keyword search)
     terms = [t for t in norm_q.split() if len(t) > 1]
+    if not terms:
+        return []
     stmt = select(FileCatalog)
-    if terms:
-        stmt = stmt.where(or_(*[FileCatalog.name_norm.like(f"%{t}%") for t in terms]))
+    stmt = stmt.where(or_(*[FileCatalog.name_norm.like(f"%{t}%") for t in terms]))
     stmt = _type_filter(stmt)
     stmt = stmt.order_by(nullslast(FileCatalog.modified.desc())).limit(limit)
     return list(db.execute(stmt).scalars().all())
@@ -171,6 +187,7 @@ def search_chunks(query_embedding: list[float], db: Session, k: int = TOP_K) -> 
     results = db.execute(
         select(KnowledgeChunk)
         .where(KnowledgeChunk.embedding.isnot(None))
+        .where(KnowledgeChunk.source_type != "invenias")
         .order_by(KnowledgeChunk.embedding.cosine_distance(query_embedding))
         .limit(k)
     ).scalars().all()
