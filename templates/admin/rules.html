@@ -162,10 +162,13 @@
       idxWrap.style.display = idx.running ? '' : 'none';
       if (idx.running) {
         document.getElementById('idx-drive').textContent = idx.current_drive || '…';
-        document.getElementById('idx-drives-done').textContent = idx.drives_done;
-        document.getElementById('idx-drives-total').textContent = idx.drives_total;
         document.getElementById('idx-files').textContent = idx.files_done;
-        document.getElementById('idx-bar').style.width = pct(idx.drives_done, idx.drives_total) + '%';
+        const hasDrives = idx.drives_total > 0;
+        document.getElementById('idx-drives-done').textContent = hasDrives ? idx.drives_done : '—';
+        document.getElementById('idx-drives-total').textContent = hasDrives ? idx.drives_total : '—';
+        document.getElementById('idx-bar').style.width = hasDrives ? pct(idx.drives_done, idx.drives_total) + '%' : '0%';
+        // Pulse the bar when drives_total not yet known (assignments phase)
+        document.getElementById('idx-bar').style.opacity = hasDrives ? '1' : '0.6';
       }
 
       const enrWrap = document.getElementById('enrichment-bar-wrap');

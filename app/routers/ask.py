@@ -106,6 +106,9 @@ def delete_rule(rule_id: str, db: Session = Depends(get_db), admin: User = Depen
 
 @router.post("/admin/index-now")
 def trigger_index(admin: User = Depends(get_current_admin)):
+    from app.progress import snapshot
+    if snapshot()["indexing"]["running"]:
+        return RedirectResponse("/ask/admin/rules", status_code=302)
     from app.indexer import run_indexing_sync
     threading.Thread(target=run_indexing_sync, daemon=True).start()
     return RedirectResponse("/ask/admin/rules?indexed=1", status_code=302)
@@ -120,6 +123,9 @@ def progress(admin: User = Depends(get_current_admin)):
 
 @router.post("/admin/enrich-now")
 def trigger_enrich(force: str = Form(""), admin: User = Depends(get_current_admin)):
+    from app.progress import snapshot
+    if snapshot()["enrichment"]["running"]:
+        return RedirectResponse("/ask/admin/rules", status_code=302)
     from app.enricher import run_enrichment_sync
     threading.Thread(target=run_enrichment_sync, kwargs={"force": force == "1"}, daemon=True).start()
     return RedirectResponse("/ask/admin/rules?enriched=1", status_code=302)

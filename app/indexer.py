@@ -46,9 +46,13 @@ def _assignment_text(a: Assignment) -> str:
 
 
 async def _index_assignments(db: Session) -> int:
+    from app import progress as _prog
     assignments = db.execute(select(Assignment)).scalars().all()
+    total = len(assignments)
     now = datetime.now(timezone.utc)
     indexed = 0
+
+    _prog.update("indexing", phase="assignments", current_drive=f"Invenias assignments (0/{total})", drives_total=0)
 
     for assignment in assignments:
         content = _assignment_text(assignment)
@@ -83,6 +87,8 @@ async def _index_assignments(db: Session) -> int:
                 indexed_at=now,
             ))
         indexed += 1
+        if indexed % 10 == 0:
+            _prog.update("indexing", current_drive=f"Invenias assignments ({indexed}/{total})", files_done=indexed)
 
     db.commit()
     return indexed
