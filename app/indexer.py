@@ -500,13 +500,16 @@ async def _run_indexing() -> dict:
 
     db = SessionLocal()
     try:
-        invenias_count = await _index_assignments(db)
+        # Remove any previously indexed Invenias chunks — Ask PL is SharePoint-only
+        db.execute(delete(KnowledgeChunk).where(KnowledgeChunk.source_type == "invenias"))
+        db.commit()
+
         catalog_count = await _build_file_catalog(db)
         sp_count = await _index_sharepoint(db)
         comment_count = await _index_doc_comments(db)
         msg = (
-            f"Indexed {invenias_count} Invenias assignments + {catalog_count} cataloged files "
-            f"+ {sp_count} SharePoint chunks + {comment_count} doc comments"
+            f"{catalog_count} files cataloged, {sp_count} SharePoint chunks indexed, "
+            f"{comment_count} doc comments indexed"
         )
         logger.info(msg)
         _prog.update("indexing", running=False, current_drive="")
