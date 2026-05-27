@@ -111,6 +111,13 @@ def trigger_index(admin: User = Depends(get_current_admin)):
     return RedirectResponse("/ask/admin/rules?indexed=1", status_code=302)
 
 
+@router.get("/admin/progress")
+def progress(admin: User = Depends(get_current_admin)):
+    from app.progress import snapshot
+    from fastapi.responses import JSONResponse
+    return JSONResponse(snapshot())
+
+
 @router.post("/admin/enrich-now")
 def trigger_enrich(force: str = Form(""), admin: User = Depends(get_current_admin)):
     from app.enricher import run_enrichment_sync

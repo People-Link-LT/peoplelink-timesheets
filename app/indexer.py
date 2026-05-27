@@ -299,6 +299,7 @@ async def _build_file_catalog(db: Session) -> int:
 
     from app.sharepoint import _normalize
     from app.models import FileCatalog
+    from app import progress as _prog
 
     drives_raw = settings.sharepoint_index_drives
     if drives_raw:
@@ -317,11 +318,15 @@ async def _build_file_catalog(db: Session) -> int:
     now = datetime.now(timezone.utc)
     total = 0
 
-    for drive_name in drives:
+    _prog.update("indexing", phase="catalog", drives_total=len(drives) * 2, drives_done=0, files_done=0)
+
+    for i, drive_name in enumerate(drives):
+        _prog.update("indexing", current_drive=drive_name, drives_done=i)
         try:
             files = await _collect_drive_files(sp_kwargs, drive_name)
         except Exception as e:
             logger.error(f"[catalog:{drive_name}] crawl failed: {e}")
+            _prog.update("indexing", drives_done=i + 1)
             continue
 
         for f in files:
@@ -371,6 +376,7 @@ async def _build_file_catalog(db: Session) -> int:
 
         db.commit()  # commit per drive so progress survives interruption
         logger.info(f"[catalog:{drive_name}] cataloged {len(files)} files")
+        _prog.update("indexing", drives_done=i + 1, files_done=total)
 
     logger.info(f"File catalog: {total} files across {len(drives)} drives")
     return total
@@ -408,15 +414,22 @@ async def _index_sharepoint(db: Session) -> int:
     now = datetime.now(timezone.utc)
     total = 0
 
+    from app import progress as _prog
+    n_drives = len(drives)
+    # drives_total was set to len(drives)*2 by _build_file_catalog; content phase starts at halfway
+    catalog_offset = n_drives
+
     async with httpx.AsyncClient(timeout=60) as http:
-        for drive_name in drives:
+        for i, drive_name in enumerate(drives):
             logger.info(f"Indexing drive: {drive_name}")
+            _prog.update("indexing", phase="content", current_drive=drive_name, drives_done=catalog_offset + i)
             try:
                 count = await _index_one_drive(db, drive_name, sp_kwargs, http, now)
                 logger.info(f"[{drive_name}] Indexed {count} chunks")
                 total += count
             except Exception as e:
                 logger.error(f"[{drive_name}] Drive indexing failed: {e}")
+            _prog.update("indexing", drives_done=catalog_offset + i + 1, files_done=total)
 
     return total
 
@@ -476,6 +489,9 @@ async def _run_indexing() -> dict:
     if not settings.openai_api_key:
         return {"ok": False, "message": "OPENAI_API_KEY not set — skipping indexing."}
 
+    from app import progress as _prog
+    _prog.update("indexing", running=True, drives_done=0, drives_total=0, files_done=0, current_drive="", phase="")
+
     db = SessionLocal()
     try:
         invenias_count = await _index_assignments(db)
@@ -487,10 +503,12 @@ async def _run_indexing() -> dict:
             f"+ {sp_count} SharePoint chunks + {comment_count} doc comments"
         )
         logger.info(msg)
+        _prog.update("indexing", running=False, current_drive="")
         return {"ok": True, "message": msg}
     except Exception as e:
         db.rollback()
         logger.error(f"Indexing failed: {e}")
+        _prog.update("indexing", running=False, current_drive="")
         return {"ok": False, "message": str(e)}
     finally:
         db.close()

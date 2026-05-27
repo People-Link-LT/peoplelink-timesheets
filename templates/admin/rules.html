@@ -2,16 +2,27 @@
 {% block title %}Ask PL Rules — Admin{% endblock %}
 
 {% block content %}
-{% if indexing_started %}
-<div class="mb-4 bg-green-50 border border-green-200 text-green-800 text-sm px-4 py-3 rounded-lg">
-  Indexing started in the background — this may take a couple of minutes. Ask PL will reflect new knowledge once complete.
+<!-- Live progress bars (shown while jobs run) -->
+<div id="progress-section" class="mb-4 space-y-2" style="display:none">
+  <div id="indexing-bar-wrap" class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3" style="display:none">
+    <div class="flex justify-between text-xs text-blue-700 mb-1.5">
+      <span>Re-indexing: <span id="idx-drive" class="font-medium"></span></span>
+      <span><span id="idx-drives-done">0</span>/<span id="idx-drives-total">0</span> drives &middot; <span id="idx-files">0</span> files</span>
+    </div>
+    <div class="w-full bg-blue-100 rounded-full h-1.5">
+      <div id="idx-bar" class="bg-blue-500 h-1.5 rounded-full transition-all duration-500" style="width:0%"></div>
+    </div>
+  </div>
+  <div id="enrichment-bar-wrap" class="bg-purple-50 border border-purple-200 rounded-lg px-4 py-3" style="display:none">
+    <div class="flex justify-between text-xs text-purple-700 mb-1.5">
+      <span>Enriching metadata</span>
+      <span id="enr-counter">0/0 files</span>
+    </div>
+    <div class="w-full bg-purple-100 rounded-full h-1.5">
+      <div id="enr-bar" class="bg-purple-600 h-1.5 rounded-full transition-all duration-500" style="width:0%"></div>
+    </div>
+  </div>
 </div>
-{% endif %}
-{% if enrichment_started %}
-<div class="mb-4 bg-purple-50 border border-purple-200 text-purple-800 text-sm px-4 py-3 rounded-lg">
-  Enrichment started in the background — GPT-4o-mini is classifying documents. This may take a few minutes.
-</div>
-{% endif %}
 <div class="mb-6 flex items-center justify-between">
   <div>
     <h1 class="text-xl font-semibold text-gray-900">Ask PL — Rules & Principles</h1>
@@ -26,7 +37,7 @@
     </p>
   </div>
   <div class="flex gap-2 items-center">
-    <span class="text-xs text-gray-400">{{ enriched_files }}/{{ total_files }} enriched</span>
+    <span id="enrich-count" class="text-xs text-gray-400">{{ enriched_files }}/{{ total_files }} enriched</span>
     <form method="post" action="/ask/admin/enrich-now">
       <input type="hidden" name="force" value="0"/>
       <button type="submit" class="text-sm border border-purple-300 text-purple-700 hover:bg-purple-50 px-4 py-2 rounded-lg">
@@ -122,4 +133,67 @@
     <li>When information is ambiguous, ask a clarifying question instead of guessing.</li>
   </ul>
 </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  let timer = null;
+  let wasRunning = false;
+
+  function pct(done, total) {
+    return total > 0 ? Math.round(done / total * 100) : 0;
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch('/ask/admin/progress');
+      if (!r.ok) return;
+      const d = await r.json();
+
+      const idx = d.indexing;
+      const enr = d.enrichment;
+      const running = idx.running || enr.running;
+
+      document.getElementById('progress-section').style.display = running ? '' : 'none';
+
+      const idxWrap = document.getElementById('indexing-bar-wrap');
+      idxWrap.style.display = idx.running ? '' : 'none';
+      if (idx.running) {
+        document.getElementById('idx-drive').textContent = idx.current_drive || '…';
+        document.getElementById('idx-drives-done').textContent = idx.drives_done;
+        document.getElementById('idx-drives-total').textContent = idx.drives_total;
+        document.getElementById('idx-files').textContent = idx.files_done;
+        document.getElementById('idx-bar').style.width = pct(idx.drives_done, idx.drives_total) + '%';
+      }
+
+      const enrWrap = document.getElementById('enrichment-bar-wrap');
+      enrWrap.style.display = enr.running ? '' : 'none';
+      if (enr.running) {
+        document.getElementById('enr-counter').textContent = enr.done + '/' + enr.total + ' files';
+        document.getElementById('enr-bar').style.width = pct(enr.done, enr.total) + '%';
+      }
+
+      if (wasRunning && !running) {
+        clearInterval(timer);
+        timer = null;
+        location.reload();
+      }
+      wasRunning = running;
+    } catch (e) { /* network blip — keep polling */ }
+  }
+
+  function startPolling() {
+    if (timer) return;
+    timer = setInterval(poll, 1500);
+    poll();
+  }
+
+  startPolling();
+
+  document.querySelectorAll('form[action="/ask/admin/index-now"], form[action="/ask/admin/enrich-now"]')
+    .forEach(f => f.addEventListener('submit', () => setTimeout(startPolling, 800)));
+})();
+</script>
 {% endblock %}

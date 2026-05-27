@@ -191,6 +191,9 @@ async def enrich_all(db: Session, force: bool = False) -> dict:
 
     logger.info(f"Enriching {len(catalog_rows)} file_catalog rows")
 
+    from app import progress as _prog
+    _prog.update("enrichment", running=True, done=0, total=len(catalog_rows))
+
     # Build a map: item_id → list of KnowledgeChunk (all chunks for that file)
     # source_id is either "{item_id}" (chunk 0) or "{item_id}::N" (chunk N)
     all_chunks: list[KnowledgeChunk] = list(
@@ -275,11 +278,13 @@ async def enrich_all(db: Session, force: bool = False) -> dict:
         db.commit()
         cat_enriched += len(batch)
         chunk_enriched += sum(results)
+        _prog.update("enrichment", done=cat_enriched)
         logger.info(
             f"Enrichment progress: {cat_enriched}/{len(catalog_rows)} files "
             f"({chunk_enriched} chunks updated)"
         )
 
+    _prog.update("enrichment", running=False)
     logger.info(f"Enrichment complete: {cat_enriched} catalog rows, {chunk_enriched} chunks")
     return {"catalog": cat_enriched, "chunks": chunk_enriched}
 
@@ -298,6 +303,8 @@ async def _run_enrichment(force: bool = False) -> dict:
     except Exception as e:
         db.rollback()
         logger.error(f"Enrichment failed: {e}")
+        from app import progress as _prog
+        _prog.update("enrichment", running=False)
         return {"ok": False, "message": str(e)}
     finally:
         db.close()
