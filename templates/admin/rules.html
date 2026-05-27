@@ -10,7 +10,15 @@
 <div class="mb-6 flex items-center justify-between">
   <div>
     <h1 class="text-xl font-semibold text-gray-900">Ask PL — Rules & Principles</h1>
-    <p class="text-sm text-gray-500 mt-0.5">Rules are injected into every Ask PL response. Lower priority number = applied first.</p>
+    <p class="text-sm text-gray-500 mt-0.5">
+      Rules are injected into every Ask PL response. Lower priority number = applied first.
+      <span class="inline-flex items-center gap-1 ml-2 text-xs bg-purple-50 text-purple-700 border border-purple-200 rounded-full px-2 py-0.5">
+        Chat: {{ "Claude Haiku" if anthropic_key else "GPT-4o-mini" }}
+      </span>
+      <span class="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2 py-0.5">
+        Embeddings: text-embedding-3-small
+      </span>
+    </p>
   </div>
   <div class="flex gap-2">
     <form method="post" action="/ask/admin/index-now">

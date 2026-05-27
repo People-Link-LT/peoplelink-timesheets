@@ -48,8 +48,14 @@ async def ask_query(
 
 @router.get("/admin/rules", response_class=HTMLResponse)
 def rules_page(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin), indexed: str = ""):
+    from app.config import settings as _s
     rules = db.execute(select(AskRule).order_by(AskRule.priority, AskRule.created_at)).scalars().all()
-    return templates.TemplateResponse(request, "admin/rules.html", {"user": admin, "rules": rules, "indexing_started": bool(indexed)})
+    return templates.TemplateResponse(request, "admin/rules.html", {
+        "user": admin,
+        "rules": rules,
+        "indexing_started": bool(indexed),
+        "anthropic_key": bool(_s.anthropic_api_key),
+    })
 
 
 @router.post("/admin/rules/create")

@@ -62,7 +62,7 @@ async def ask_stream(
     db: Session,
 ) -> AsyncGenerator[str, None]:
     if not settings.openai_api_key:
-        yield f"data: {json.dumps({'error': 'Ask PL is not configured — OPENAI_API_KEY missing.'})}\n\n"
+        yield f"data: {json.dumps({'error': 'Ask PL requires OPENAI_API_KEY (used for embeddings).'})}\n\n"
         return
 
     try:
