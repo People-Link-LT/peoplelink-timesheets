@@ -114,3 +114,9 @@ def init_db():
             conn.commit()
         except Exception:
             conn.rollback()
+        # Widen file_catalog.ext to VARCHAR(50) (filenames with dots but no real extension)
+        try:
+            conn.execute(text("ALTER TABLE file_catalog ALTER COLUMN ext TYPE VARCHAR(50)"))
+            conn.commit()
+        except Exception:
+            conn.rollback()

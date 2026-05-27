@@ -406,7 +406,7 @@ async def _build_file_catalog(db: Session) -> int:
                 continue
             name = f.get("name", "")
             folder_path = f.get("folder_path", "")
-            ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            ext = ("." + name.rsplit(".", 1)[-1].lower())[:50] if "." in name else ""
             norm = _normalize(f"{drive_name}/{folder_path}/{name}")
 
             modified = None

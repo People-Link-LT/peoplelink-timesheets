@@ -161,7 +161,7 @@ class FileCatalog(Base):
     folder_path: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
     name: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     name_norm: Mapped[str] = mapped_column(Text, nullable=False, default="")  # diacritic-stripped "drive/folder/name" for search
-    ext: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    ext: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     web_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     size: Mapped[int] = mapped_column(BigInteger, default=0)
     modified: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
