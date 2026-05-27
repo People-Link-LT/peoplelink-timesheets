@@ -295,6 +295,7 @@ async def browse(
                 "current_drive": "",
                 "breadcrumb": [],
                 "metas": metas,
+                "catalog": {},
             })
 
     # File list mode
@@ -318,6 +319,7 @@ async def browse(
 
     item_ids = [f["id"] for f in files if f.get("id")]
     metas: dict = {}
+    catalog: dict = {}
     if item_ids:
         rows = db.execute(select(DocMeta).where(DocMeta.item_id.in_(item_ids))).scalars().all()
         metas = {
@@ -329,6 +331,23 @@ async def browse(
             }
             for r in rows
         }
+        from app.models import FileCatalog
+        cat_rows = db.execute(
+            select(FileCatalog).where(FileCatalog.item_id.in_(item_ids))
+        ).scalars().all()
+        catalog = {
+            r.item_id: {
+                "doc_type":   r.doc_type or "",
+                "company":    r.company or "",
+                "doc_number": r.doc_number or "",
+                "doc_year":   r.doc_year,
+                "doc_month":  r.doc_month,
+                "summary":    r.ai_summary or "",
+                "topics":     _json.loads(r.ai_topics) if r.ai_topics else [],
+                "applies_to": r.ai_applies_to or "",
+            }
+            for r in cat_rows
+        }
 
     return templates.TemplateResponse(request, "documents/browse.html", {
         "user": user,
@@ -338,6 +357,7 @@ async def browse(
         "current_drive": drive,
         "breadcrumb": breadcrumb,
         "metas": metas,
+        "catalog": catalog,
         "subcategories": [],
         "parent_category": None,
         "current_category": "",

@@ -127,6 +127,7 @@
         {% set folder_path = f.name %}
       {% endif %}
       {% set meta = metas.get(f.id, {}) %}
+      {% set cat = catalog.get(f.id, {}) %}
       {% set has_comment = meta.get('comment', '') %}
       {% set has_audience = meta.get('audience', []) %}
 
@@ -177,7 +178,24 @@
                       d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
               </svg>
             {% endif %}
-            <span class="font-medium text-gray-800">{{ f.name }}</span>
+            <div class="min-w-0">
+              <span class="font-medium text-gray-800">{{ f.name }}</span>
+              {% if cat.get('doc_type') and not f.is_folder %}
+              {% set dt = cat['doc_type'] %}
+              {% set dt_color =
+                'bg-green-100 text-green-700' if dt in ['invoice'] else
+                'bg-blue-100 text-blue-700' if dt in ['proposal', 'client_contract'] else
+                'bg-indigo-100 text-indigo-700' if 'contract' in dt else
+                'bg-amber-100 text-amber-700' if dt in ['policy', 'order', 'instruction', 'request'] else
+                'bg-purple-100 text-purple-700' if dt in ['gdpr', 'nda', 'power_of_attorney'] else
+                'bg-rose-100 text-rose-700' if dt in ['debt', 'loan_contract'] else
+                'bg-gray-100 text-gray-500'
+              %}
+              <span class="ml-1.5 text-xs px-1.5 py-0.5 rounded font-medium {{ dt_color }}">{{ dt }}</span>
+              {% if cat.get('doc_number') %}<span class="ml-1 text-xs text-gray-400">№{{ cat['doc_number'] }}</span>{% endif %}
+              {% if cat.get('doc_year') %}<span class="ml-1 text-xs text-gray-400">{{ cat['doc_year'] }}{% if cat.get('doc_month') %}-{{ '%02d' | format(cat['doc_month']) }}{% endif %}</span>{% endif %}
+              {% endif %}
+            </div>
           </div>
           {# Mobile: show comment + audience under name #}
           {% if has_comment or has_audience %}
@@ -205,6 +223,8 @@
           <div class="comment-cell" data-item-id="{{ f.id }}">
             {% if has_comment %}
               <p class="text-xs text-gray-500 truncate">{{ has_comment }}</p>
+            {% elif cat.get('summary') %}
+              <p class="text-xs text-gray-400 truncate italic">{{ cat['summary'] }}</p>
             {% else %}
               <p class="text-xs text-gray-300 italic">No comment</p>
             {% endif %}
@@ -218,6 +238,8 @@
                 {% else %}bg-purple-100 text-purple-700{% endif %}">{{ a }}</span>
               {% endfor %}
             </div>
+            {% elif cat.get('applies_to') and cat['applies_to'] not in ['null', 'all_employees'] %}
+              <span class="text-xs text-gray-300">{{ cat['applies_to'] }}</span>
             {% endif %}
           </div>
         </td>
