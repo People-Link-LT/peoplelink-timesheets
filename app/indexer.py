@@ -120,7 +120,15 @@ async def _index_assignments(db: Session) -> int:
     return indexed
 
 
-async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, now: datetime) -> int:
+async def _index_one_drive(
+    db: Session,
+    drive_name: str,
+    sp_kwargs: dict,
+    http,
+    now: datetime,
+    changed_items: list[dict] | None = None,
+    deleted_item_ids: list[str] | None = None,
+) -> int:
     from app.sharepoint import list_files, resolve_token_and_drive
 
     SUPPORTED_EXTENSIONS = {".txt", ".md", ".csv", ".pdf", ".docx", ".pptx", ".xlsx"}
@@ -129,27 +137,44 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
     skipped_ext = 0
     skipped_size = 0
 
+    if deleted_item_ids:
+        for item_id in deleted_item_ids:
+            db.execute(
+                delete(KnowledgeChunk).where(
+                    KnowledgeChunk.source_type == "sharepoint",
+                    KnowledgeChunk.source_id.like(f"{item_id}%"),
+                )
+            )
+        db.commit()
+
+    if changed_items is not None and not changed_items:
+        return 0
+
     token, drive_base = await resolve_token_and_drive(**sp_kwargs, drive_name=drive_name)
     auth_headers = {"Authorization": f"Bearer {token}"}
 
-    async def collect_files(folder: str) -> list[dict]:
-        try:
-            items = await list_files(**sp_kwargs, drive_name=drive_name, folder=folder)
-        except Exception as e:
-            logger.error(f"[{drive_name}] List failed for '{folder}': {e}")
-            return []
-        result = []
-        for item in items:
-            if item["is_folder"]:
-                sub_folder = f"{folder}/{item['name']}".lstrip("/") if folder else item["name"]
-                result.extend(await collect_files(sub_folder))
-            else:
-                item["folder_path"] = folder
-                result.append(item)
-        return result
+    if changed_items is None:
+        async def collect_files(folder: str) -> list[dict]:
+            try:
+                items = await list_files(**sp_kwargs, drive_name=drive_name, folder=folder)
+            except Exception as e:
+                logger.error(f"[{drive_name}] List failed for '{folder}': {e}")
+                return []
+            result = []
+            for item in items:
+                if item["is_folder"]:
+                    sub_folder = f"{folder}/{item['name']}".lstrip("/") if folder else item["name"]
+                    result.extend(await collect_files(sub_folder))
+                else:
+                    item["folder_path"] = folder
+                    result.append(item)
+            return result
 
-    all_files = await collect_files("")
-    logger.info(f"[{drive_name}] Found {len(all_files)} files")
+        all_files = await collect_files("")
+        logger.info(f"[{drive_name}] Found {len(all_files)} files")
+    else:
+        all_files = changed_items
+        logger.info(f"[{drive_name}] Processing {len(all_files)} changed files (delta)")
 
     import io as _io
 
@@ -329,8 +354,8 @@ async def _build_file_catalog(db: Session) -> int:
     ]):
         return 0
 
-    from app.sharepoint import _normalize
-    from app.models import FileCatalog
+    from app.sharepoint import _normalize, list_files_delta, DeltaExpiredError
+    from app.models import FileCatalog, DriveSync
     from app import progress as _prog
 
     # Catalog always covers every drive so search_files can find any document
@@ -351,14 +376,31 @@ async def _build_file_catalog(db: Session) -> int:
 
     for i, drive_name in enumerate(drives):
         _prog.update("indexing", current_drive=drive_name, drives_done=i)
+
+        sync_row = db.execute(
+            select(DriveSync).where(DriveSync.drive_name == drive_name)
+        ).scalar_one_or_none()
+        stored_delta = sync_row.catalog_delta_link if sync_row else None
+
         try:
-            files = await _collect_drive_files(sp_kwargs, drive_name)
+            try:
+                changed_files, deleted_ids, new_delta_link = await list_files_delta(
+                    **sp_kwargs, drive_name=drive_name, delta_link=stored_delta
+                )
+            except DeltaExpiredError:
+                logger.warning(f"[catalog:{drive_name}] Delta token expired — full crawl")
+                changed_files, deleted_ids, new_delta_link = await list_files_delta(
+                    **sp_kwargs, drive_name=drive_name, delta_link=None
+                )
         except Exception as e:
             logger.error(f"[catalog:{drive_name}] crawl failed: {e}")
             _prog.update("indexing", drives_done=i + 1)
             continue
 
-        for f in files:
+        if deleted_ids:
+            db.execute(delete(FileCatalog).where(FileCatalog.item_id.in_(deleted_ids)))
+
+        for f in changed_files:
             item_id = f.get("id")
             if not item_id:
                 continue
@@ -403,8 +445,15 @@ async def _build_file_catalog(db: Session) -> int:
                 ))
             total += 1
 
-        db.commit()  # commit per drive so progress survives interruption
-        logger.info(f"[catalog:{drive_name}] cataloged {len(files)} files")
+        if new_delta_link:
+            if sync_row is None:
+                sync_row = DriveSync(drive_name=drive_name)
+                db.add(sync_row)
+            sync_row.catalog_delta_link = new_delta_link
+            sync_row.last_catalog_sync = now.replace(tzinfo=None)
+
+        db.commit()
+        logger.info(f"[catalog:{drive_name}] {len(changed_files)} changed, {len(deleted_ids)} deleted")
         _prog.update("indexing", drives_done=i + 1, files_done=total)
 
     logger.info(f"File catalog: {total} files across {len(drives)} drives")
@@ -445,6 +494,8 @@ async def _index_sharepoint(db: Session) -> int:
     total = 0
 
     from app import progress as _prog
+    from app.models import DriveSync
+    from app.sharepoint import list_files_delta, DeltaExpiredError
     n_drives = len(drives)
     # drives_total was set to len(drives)*2 by _build_file_catalog; content phase starts at halfway
     catalog_offset = n_drives
@@ -454,9 +505,40 @@ async def _index_sharepoint(db: Session) -> int:
             logger.info(f"Indexing drive: {drive_name}")
             _prog.update("indexing", phase="content", current_drive=drive_name, drives_done=catalog_offset + i)
             try:
-                count = await _index_one_drive(db, drive_name, sp_kwargs, http, now)
+                sync_row = db.execute(
+                    select(DriveSync).where(DriveSync.drive_name == drive_name)
+                ).scalar_one_or_none()
+                stored_delta = sync_row.content_delta_link if sync_row else None
+
+                try:
+                    changed_files, deleted_ids, new_delta_link = await list_files_delta(
+                        **sp_kwargs, drive_name=drive_name, delta_link=stored_delta
+                    )
+                except DeltaExpiredError:
+                    logger.warning(f"[{drive_name}] Content delta expired — full crawl")
+                    changed_files, deleted_ids, new_delta_link = await list_files_delta(
+                        **sp_kwargs, drive_name=drive_name, delta_link=None
+                    )
+
+                count = await _index_one_drive(
+                    db, drive_name, sp_kwargs, http, now,
+                    changed_items=changed_files, deleted_item_ids=deleted_ids,
+                )
                 logger.info(f"[{drive_name}] Indexed {count} chunks")
                 total += count
+
+                if new_delta_link:
+                    if sync_row is None:
+                        sync_row = db.execute(
+                            select(DriveSync).where(DriveSync.drive_name == drive_name)
+                        ).scalar_one_or_none()
+                    if sync_row is None:
+                        sync_row = DriveSync(drive_name=drive_name)
+                        db.add(sync_row)
+                    sync_row.content_delta_link = new_delta_link
+                    sync_row.last_content_sync = now.replace(tzinfo=None)
+                    db.commit()
+
             except Exception as e:
                 logger.error(f"[{drive_name}] Drive indexing failed: {e}")
             _prog.update("indexing", drives_done=catalog_offset + i + 1, files_done=total)

@@ -270,3 +270,84 @@ async def get_file_stream(
         file_resp = await client.get(download_url, follow_redirects=True)
         file_resp.raise_for_status()
         return file_resp.content, mime_type, filename
+
+
+class DeltaExpiredError(Exception):
+    """Raised when the stored delta token has expired (HTTP 410 Gone)."""
+
+
+async def list_files_delta(
+    tenant_id: str,
+    client_id: str,
+    client_secret: str,
+    site_hostname: str,
+    site_path: str,
+    drive_name: str = "",
+    delta_link: str | None = None,
+) -> tuple[list[dict], list[str], str]:
+    """Incremental file listing using the Graph delta API.
+
+    Returns (changed_files, deleted_item_ids, new_delta_link).
+    First call (delta_link=None): returns ALL files in the drive.
+    Subsequent calls: only items changed since the last sync.
+    Raises DeltaExpiredError on HTTP 410 (expired token).
+    """
+    from urllib.parse import unquote
+
+    token = await _get_token(tenant_id, client_id, client_secret)
+    auth = {"Authorization": f"Bearer {token}"}
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        drive_base = await _resolve_drive(client, auth, site_hostname, site_path, drive_name)
+
+        url: str | None = delta_link or (
+            f"{drive_base}/root/delta"
+            "?$select=id,name,size,lastModifiedDateTime,folder,webUrl,file,parentReference,deleted"
+            "&$top=500"
+        )
+
+        changed: list[dict] = []
+        deleted: list[str] = []
+        new_delta_link = ""
+
+        while url:
+            resp = await client.get(url, headers=auth)
+            if resp.status_code == 410:
+                raise DeltaExpiredError(f"Delta token expired for drive '{drive_name}'")
+            resp.raise_for_status()
+            data = resp.json()
+
+            for item in data.get("value", []):
+                item_id = item.get("id", "")
+                if not item_id:
+                    continue
+
+                if "deleted" in item:
+                    deleted.append(item_id)
+                    continue
+
+                if "folder" in item:
+                    continue  # Files carry their own parentReference; folder items not needed
+
+                parent_path_raw = item.get("parentReference", {}).get("path", "")
+                if "/root:" in parent_path_raw:
+                    folder_path = unquote(parent_path_raw.split("/root:", 1)[1].lstrip("/"))
+                else:
+                    folder_path = ""
+
+                changed.append({
+                    "id": item_id,
+                    "name": item.get("name", ""),
+                    "size": item.get("size", 0),
+                    "modified": item.get("lastModifiedDateTime", ""),
+                    "web_url": item.get("webUrl", ""),
+                    "is_folder": False,
+                    "mime_type": item.get("file", {}).get("mimeType", ""),
+                    "folder_path": folder_path,
+                })
+
+            url = data.get("@odata.nextLink")
+            if not url:
+                new_delta_link = data.get("@odata.deltaLink", "")
+
+    return changed, deleted, new_delta_link
