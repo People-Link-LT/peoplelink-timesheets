@@ -17,6 +17,32 @@ CHUNK_OVERLAP = 100   # word overlap between chunks
 MAX_CHUNKS_PER_FILE = 8  # cap per file so large docs don't dominate the index
 INVENIAS_SUBDOMAIN = "peoplelink"
 
+# Drives whose *content* is worth embedding for semantic search.
+# Client-facing drives (Sąskaitos, Pasiūlymai, Sutartys…) are excluded —
+# their files are structured/binary docs best found via search_files, not vectors.
+# Override with SHAREPOINT_INDEX_DRIVES env var if needed.
+_CONTENT_DRIVES_DEFAULT = [
+    "Aktualūs dokumentai",
+    "Akademija",
+    "Mokymai",
+    "Procesai ir KPI",
+    "Tvarkos",
+    "Instrukcijos",
+    "Skelbimai",
+    "Komunikacija",
+    "Consulting / Tripod",
+    "People Link methods",
+    "Tripod methods (surveys)",
+    "Assessment as a Service",
+    "Klientų auginimas",
+    "Kiti dokumentai",
+    "Darbo taryba",
+    "Darbų sauga",
+    "Sveikatos patikra",
+    "Asmens duomenų apsauga",
+    "Laikinasis įdarbinimas",
+]
+
 
 def _chunk_text(text: str) -> list[str]:
     words = text.split()
@@ -307,11 +333,8 @@ async def _build_file_catalog(db: Session) -> int:
     from app.models import FileCatalog
     from app import progress as _prog
 
-    drives_raw = settings.sharepoint_index_drives
-    if drives_raw:
-        drives = [d.strip() for d in drives_raw.split(",") if d.strip()]
-    else:
-        drives = _all_category_drives()
+    # Catalog always covers every drive so search_files can find any document
+    drives = _all_category_drives()
 
     sp_kwargs = dict(
         tenant_id=settings.sharepoint_tenant_id,
@@ -401,9 +424,10 @@ async def _index_sharepoint(db: Session) -> int:
     drives_raw = settings.sharepoint_index_drives
     if drives_raw:
         drives = [d.strip() for d in drives_raw.split(",") if d.strip()]
+        logger.info(f"SHAREPOINT_INDEX_DRIVES set — content-indexing {len(drives)} drives")
     else:
-        drives = _all_category_drives()
-        logger.info(f"SHAREPOINT_INDEX_DRIVES not set — auto-indexing {len(drives)} category drives")
+        drives = _CONTENT_DRIVES_DEFAULT
+        logger.info(f"SHAREPOINT_INDEX_DRIVES not set — using default knowledge drives ({len(drives)} drives)")
 
     if not drives:
         logger.warning("No drives found for indexing")
