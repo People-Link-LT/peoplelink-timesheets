@@ -680,7 +680,7 @@ document.querySelectorAll('#file-table tbody tr').forEach(row => {
   const webUrl     = row.dataset.webUrl;
   const mime       = row.dataset.mime;
 
-  row.addEventListener('dblclick', e => {
+  row.addEventListener('click', e => {
     if (e.target.closest('a,button')) return;
     if (isFolder) {
       if (!currentDrive) {
@@ -692,14 +692,6 @@ document.querySelectorAll('#file-table tbody tr').forEach(row => {
       openViewer(name, itemId, dlUrl, webUrl, mime);
     }
   });
-
-  if (!isFolder) {
-    row.addEventListener('click', e => {
-      if (e.target.closest('a,button')) return;
-      document.querySelectorAll('#file-table tbody tr.ring-1').forEach(r => r.classList.remove('ring-1','ring-blue-300','bg-blue-50'));
-      row.classList.add('ring-1','ring-blue-300','bg-blue-50');
-    });
-  }
 });
 </script>
 
