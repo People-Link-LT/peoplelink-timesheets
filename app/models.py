@@ -142,6 +142,27 @@ class DocMeta(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
 
+class FileCatalog(Base):
+    """Lightweight index of every SharePoint file (listing only — no content).
+
+    Powers keyword/company file search in Ask PL (e.g. "find all invoices for X").
+    Covers every file type, including .xls/.key that the content indexer skips.
+    """
+    __tablename__ = "file_catalog"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    item_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)  # SharePoint file id
+    drive: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    folder_path: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    name: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    name_norm: Mapped[str] = mapped_column(Text, nullable=False, default="")  # diacritic-stripped "drive/folder/name" for search
+    ext: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    web_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    modified: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    indexed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
 class AskRule(Base):
     __tablename__ = "ask_rules"
 

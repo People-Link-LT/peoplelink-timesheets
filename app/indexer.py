@@ -261,6 +261,119 @@ def _all_category_drives() -> list[str]:
     return _cat_drives()
 
 
+async def _collect_drive_files(sp_kwargs: dict, drive_name: str, folder: str = "") -> list[dict]:
+    """Recursively list every file in a drive (listing only — no downloads)."""
+    from app.sharepoint import list_files
+
+    try:
+        items = await list_files(**sp_kwargs, drive_name=drive_name, folder=folder)
+    except Exception as e:
+        logger.error(f"[catalog:{drive_name}] List failed for '{folder}': {e}")
+        return []
+
+    result: list[dict] = []
+    for item in items:
+        if item.get("is_folder"):
+            sub = f"{folder}/{item['name']}".lstrip("/") if folder else item["name"]
+            result.extend(await _collect_drive_files(sp_kwargs, drive_name, sub))
+        else:
+            item["folder_path"] = folder
+            result.append(item)
+    return result
+
+
+async def _build_file_catalog(db: Session) -> int:
+    """Catalog every file across all category drives for fast filename/company search.
+
+    Cheap and memory-light: it only lists files, never downloads or embeds them.
+    Runs before content indexing so file search works even if embedding is slow.
+    """
+    if not all([
+        settings.sharepoint_tenant_id,
+        settings.sharepoint_client_id,
+        settings.sharepoint_client_secret,
+    ]):
+        return 0
+
+    from app.sharepoint import _normalize
+    from app.models import FileCatalog
+
+    drives_raw = settings.sharepoint_index_drives
+    if drives_raw:
+        drives = [d.strip() for d in drives_raw.split(",") if d.strip()]
+    else:
+        drives = _all_category_drives()
+
+    sp_kwargs = dict(
+        tenant_id=settings.sharepoint_tenant_id,
+        client_id=settings.sharepoint_client_id,
+        client_secret=settings.sharepoint_client_secret,
+        site_hostname=settings.sharepoint_site_hostname,
+        site_path=settings.sharepoint_site_path,
+    )
+
+    now = datetime.now(timezone.utc)
+    total = 0
+
+    for drive_name in drives:
+        try:
+            files = await _collect_drive_files(sp_kwargs, drive_name)
+        except Exception as e:
+            logger.error(f"[catalog:{drive_name}] crawl failed: {e}")
+            continue
+
+        for f in files:
+            item_id = f.get("id")
+            if not item_id:
+                continue
+            name = f.get("name", "")
+            folder_path = f.get("folder_path", "")
+            ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            norm = _normalize(f"{drive_name}/{folder_path}/{name}")
+
+            modified = None
+            mod_str = f.get("modified", "")
+            if mod_str:
+                try:
+                    modified = datetime.fromisoformat(mod_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                except Exception:
+                    modified = None
+
+            existing = db.execute(
+                select(FileCatalog).where(FileCatalog.item_id == item_id)
+            ).scalar_one_or_none()
+            if existing:
+                existing.drive = drive_name
+                existing.folder_path = folder_path
+                existing.name = name
+                existing.name_norm = norm
+                existing.ext = ext
+                existing.web_url = f.get("web_url")
+                existing.size = f.get("size") or 0
+                existing.modified = modified
+                existing.indexed_at = now
+            else:
+                db.add(FileCatalog(
+                    item_id=item_id,
+                    drive=drive_name,
+                    folder_path=folder_path,
+                    name=name,
+                    name_norm=norm,
+                    ext=ext,
+                    web_url=f.get("web_url"),
+                    size=f.get("size") or 0,
+                    modified=modified,
+                    indexed_at=now,
+                ))
+            total += 1
+
+        db.commit()  # commit per drive so progress survives interruption
+        logger.info(f"[catalog:{drive_name}] cataloged {len(files)} files")
+
+    logger.info(f"File catalog: {total} files across {len(drives)} drives")
+    return total
+
+
 async def _index_sharepoint(db: Session) -> int:
     if not all([
         settings.sharepoint_tenant_id,
@@ -364,9 +477,13 @@ async def _run_indexing() -> dict:
     db = SessionLocal()
     try:
         invenias_count = await _index_assignments(db)
+        catalog_count = await _build_file_catalog(db)
         sp_count = await _index_sharepoint(db)
         comment_count = await _index_doc_comments(db)
-        msg = f"Indexed {invenias_count} Invenias assignments + {sp_count} SharePoint chunks + {comment_count} doc comments"
+        msg = (
+            f"Indexed {invenias_count} Invenias assignments + {catalog_count} cataloged files "
+            f"+ {sp_count} SharePoint chunks + {comment_count} doc comments"
+        )
         logger.info(msg)
         return {"ok": True, "message": msg}
     except Exception as e:

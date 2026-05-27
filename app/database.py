@@ -57,3 +57,14 @@ def init_db():
             conn.commit()
         except Exception:
             conn.rollback()
+        # Trigram GIN index for fast substring search on the file catalog
+        try:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+            conn.commit()
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS file_catalog_name_norm_trgm "
+                "ON file_catalog USING gin (name_norm gin_trgm_ops)"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
