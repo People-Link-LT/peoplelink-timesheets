@@ -68,6 +68,7 @@ _CATEGORIES = [
         "drive": "",
         "subcategories": [
             {"name": "Komunikacija",     "drive": "Komunikacija"},
+            {"name": "Logo, marketingas", "drive": "Logo, marketingas"},
             {"name": "Skelbimai",        "drive": "Skelbimai"},
             {"name": "Procesai ir KPI",  "drive": "Procesai ir KPI"},
             {"name": "Consulting / Tripod", "drive": "Consulting / Tripod"},
@@ -130,6 +131,7 @@ _CATEGORIES = [
             {"name": "Konfid. sutartys",      "drive": "Konfidencialumo sutartys"},
             {"name": "Paskolos sutartys",     "drive": "Paskolos sutartys"},
             {"name": "Skolininkai",           "drive": "Skolininkai"},
+            {"name": "Tvarkos",               "drive": "Tvarkos"},
             {"name": "Kiti dokumentai",       "drive": "Kiti dokumentai."},
         ],
         "color_bg":   "bg-gray-50",
@@ -146,6 +148,7 @@ _CATEGORIES = [
             {"name": "Sutartys su klientais","drive": "Sutartys su klientais"},
             {"name": "Kiti dokumentai",      "drive": "Kiti dokumentai.."},
             {"name": "Klientų auginimas",    "drive": "Klientų auginimas"},
+            {"name": "Šablonai",             "drive": "Šablonai"},
         ],
         "color_bg":   "bg-rose-50",
         "color_icon": "text-rose-500",
@@ -178,8 +181,11 @@ _CATEGORIES = [
     {
         "name": "Archyvas",
         "key":  "cat::Archyvas",
-        "drive": "Archyvas",
-        "subcategories": [],
+        "drive": "",
+        "subcategories": [
+            {"name": "Archyvas", "drive": "Archyvas"},
+            {"name": "PlanC",    "drive": "PlanC"},
+        ],
         "color_bg":   "bg-slate-50",
         "color_icon": "text-slate-400",
         "icon_svg": '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>',
