@@ -1,5 +1,4 @@
 import logging
-import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -48,13 +47,8 @@ async def lifespan(app: FastAPI):
         logger.error(f"Startup Invenias sync failed: {e}")
     start_scheduler()
 
-    # Re-index on every startup so new drives and document changes are always picked up
-    try:
-        logger.info("Triggering background re-index on startup.")
-        from app.indexer import run_indexing_sync
-        threading.Thread(target=run_indexing_sync, daemon=True).start()
-    except Exception as e:
-        logger.error(f"Startup indexing failed: {e}")
+    # Indexing runs on schedule (07:00 + 13:00 Vilnius) and via the admin
+    # "Re-index" button — not on startup, to avoid worker starvation on boot.
 
     yield
 
