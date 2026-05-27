@@ -118,6 +118,76 @@ def trigger_enrich(force: str = Form(""), admin: User = Depends(get_current_admi
     return RedirectResponse("/ask/admin/rules?enriched=1", status_code=302)
 
 
+@router.get("/admin/catalog-debug")
+async def catalog_debug(
+    q: str = "",
+    drive: str = "",
+    doc_type: str = "",
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """Diagnostic: show FileCatalog per-drive counts and run a test search."""
+    from sqlalchemy import func, text
+    from app.models import FileCatalog
+    from app.ask_engine import search_files as _search_files
+
+    # Per-drive counts
+    rows = db.execute(
+        select(FileCatalog.drive, func.count().label("total"),
+               func.count(FileCatalog.enriched_at).label("enriched"),
+               func.count(FileCatalog.company).label("with_company"))
+        .group_by(FileCatalog.drive)
+        .order_by(FileCatalog.drive)
+    ).all()
+
+    drive_stats = [
+        {"drive": r.drive, "total": r.total, "enriched": r.enriched, "with_company": r.with_company}
+        for r in rows
+    ]
+
+    # Sample rows for a specific drive
+    sample = []
+    if drive:
+        sample_rows = db.execute(
+            select(FileCatalog)
+            .where(FileCatalog.drive == drive)
+            .order_by(FileCatalog.modified.desc().nullslast())
+            .limit(10)
+        ).scalars().all()
+        sample = [
+            {
+                "name": r.name, "folder_path": r.folder_path,
+                "name_norm": r.name_norm, "company": r.company,
+                "company_norm": r.company_norm, "doc_type": r.doc_type,
+                "enriched_at": r.enriched_at.isoformat() if r.enriched_at else None,
+            }
+            for r in sample_rows
+        ]
+
+    # Test search_files
+    search_results = []
+    if q or doc_type:
+        found = _search_files(db, q, doc_type=doc_type or None, limit=10)
+        search_results = [
+            {
+                "name": r.name, "folder_path": r.folder_path, "drive": r.drive,
+                "company": r.company, "company_norm": r.company_norm,
+                "doc_type": r.doc_type, "doc_number": r.doc_number,
+                "web_url": r.web_url,
+            }
+            for r in found
+        ]
+
+    return {
+        "total_catalog_rows": sum(r["total"] for r in drive_stats),
+        "drive_stats": drive_stats,
+        "sample_from_drive": sample,
+        "search_query": q,
+        "search_doc_type": doc_type,
+        "search_results": search_results,
+    }
+
+
 @router.get("/admin/stats")
 async def stats(
     request: Request,
