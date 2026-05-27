@@ -29,7 +29,8 @@ from app.models import FileCatalog, KnowledgeChunk
 
 logger = logging.getLogger(__name__)
 
-_CONCURRENCY = 20    # parallel OpenAI calls
+_CONCURRENCY = 3     # parallel OpenAI calls — stay well under 200K TPM / 500 RPM
+_CALL_SPACING = 1.2  # seconds to hold semaphore after each call (~2.5 req/sec max)
 _BATCH_COMMIT = 50   # rows per DB commit
 _CONTENT_CHARS = 4000  # max document chars to send per file
 
@@ -147,9 +148,19 @@ async def _call_json(
                 max_tokens=max_tokens,
                 temperature=0,
             )
-            return json.loads(resp.choices[0].message.content)
+            result = json.loads(resp.choices[0].message.content)
+            # Hold the slot after a successful call to pace throughput
+            await asyncio.sleep(_CALL_SPACING)
+            return result
         except Exception as e:
-            logger.error(f"OpenAI enrichment call failed: {e}")
+            err = str(e)
+            if "429" in err:
+                # Rate limited — wait longer before releasing the slot
+                wait = 60
+                logger.warning(f"OpenAI 429 — sleeping {wait}s before continuing")
+                await asyncio.sleep(wait)
+            else:
+                logger.error(f"OpenAI enrichment call failed: {e}")
             return None
 
 
