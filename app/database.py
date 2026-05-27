@@ -48,6 +48,11 @@ def init_db():
                 conn.commit()
             except Exception:
                 conn.rollback()
+        try:
+            conn.execute(text("ALTER TABLE knowledge_chunks ADD COLUMN modified TIMESTAMP"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
         # HNSW index for fast ANN search on embeddings
         try:
             conn.execute(text(

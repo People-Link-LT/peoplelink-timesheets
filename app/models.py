@@ -123,6 +123,7 @@ class KnowledgeChunk(Base):
     source_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     embedding = mapped_column(Vector(1536), nullable=True)
+    modified: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     indexed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
 

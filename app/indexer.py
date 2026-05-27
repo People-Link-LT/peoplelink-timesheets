@@ -135,6 +135,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
             continue
 
         # Incremental: skip if already indexed and not modified since
+        file_modified: datetime | None = None
         file_modified_str = f.get("modified", "")
         if file_modified_str:
             file_modified = datetime.fromisoformat(file_modified_str.replace("Z", "+00:00"))
@@ -244,6 +245,7 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
                 source_url=f.get("web_url"),
                 content=chunk_text_content,
                 embedding=embedding,
+                modified=file_modified.replace(tzinfo=None) if file_modified else None,
                 indexed_at=now,
             ))
             file_indexed += 1

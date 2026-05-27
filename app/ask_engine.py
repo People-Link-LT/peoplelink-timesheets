@@ -18,15 +18,16 @@ Answer questions using the provided context and the search_files tool. If the an
 Always respond in the same language the user asked in (Lithuanian if they asked in Lithuanian, English if in English).
 
 You have a search_files tool that searches the full SharePoint document catalog by company name or keyword. Use it whenever the user wants to find or list specific documents — invoices (sąskaitos), proposals (pasiūlymai), or contracts (sutartys) — for a company. The vector context below only holds a small sample of documents, so for "find/list all X for company Y" questions you MUST call search_files rather than relying on the context. When listing files, show each file name as a clickable markdown link to its URL, grouped sensibly, newest first.
+When using search_files, pass only the company name or core keyword as the query — do not include document-type words (like "sąskaita", "invoice", "pasiūlymas") in the query; use the doc_type parameter for that instead. If results are empty, retry with a shorter or simpler form of the company name.
 
 For general knowledge questions, answer from the context below.
 Always cite the source document for each fact you state. If a URL is available, make it a clickable link: e.g. "According to [Augimo sistema 2025.docx](https://...)..."
-When multiple documents cover the same topic, prefer the most recent one.
+When the same topic appears in multiple document versions, always prefer and cite the document with the most recent date (shown in brackets next to the file name in the context).
 Be concise and professional. For list-style questions, use bullet points."""
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL_OPENAI = "gpt-4o-mini"
-CHAT_MODEL_ANTHROPIC = "claude-haiku-4-5-20251001"
+CHAT_MODEL_ANTHROPIC = "claude-sonnet-4-6"
 TOP_K = 15
 MAX_FILE_RESULTS = 60
 
@@ -72,7 +73,7 @@ def search_files(db: Session, query: str, doc_type: str | None = None, limit: in
     terms = [t for t in _normalize(query or "").split() if len(t) > 1]
     stmt = select(FileCatalog)
     if terms:
-        stmt = stmt.where(and_(*[FileCatalog.name_norm.like(f"%{t}%") for t in terms]))
+        stmt = stmt.where(or_(*[FileCatalog.name_norm.like(f"%{t}%") for t in terms]))
     if doc_type and doc_type != "any":
         kws = _DOC_TYPE_KEYWORDS.get(doc_type, [])
         if kws:
@@ -81,7 +82,7 @@ def search_files(db: Session, query: str, doc_type: str | None = None, limit: in
     return list(db.execute(stmt).scalars().all())
 
 
-def _format_file_results(rows: list[FileCatalog]) -> str:
+def _format_file_results(rows: list[FileCatalog], limit: int = MAX_FILE_RESULTS) -> str:
     if not rows:
         return "No matching files found in the catalog."
     lines = [f"Found {len(rows)} matching file(s):"]
@@ -90,6 +91,8 @@ def _format_file_results(rows: list[FileCatalog]) -> str:
         date = r.modified.date().isoformat() if r.modified else "unknown date"
         url = r.web_url or ""
         lines.append(f"- {r.name} | folder: {loc} | modified: {date} | url: {url}")
+    if len(rows) >= limit:
+        lines.append("_(Showing newest 60 — there may be more. Try narrowing your search with a date or keyword.)_")
     return "\n".join(lines)
 
 _openai: AsyncOpenAI | None = None
@@ -128,6 +131,7 @@ def search_chunks(query_embedding: list[float], db: Session, k: int = TOP_K) -> 
 async def ask_stream(
     question: str,
     db: Session,
+    history: list[dict] | None = None,
 ) -> AsyncGenerator[str, None]:
     if not settings.openai_api_key:
         yield f"data: {json.dumps({'error': 'Ask PL requires OPENAI_API_KEY (used for embeddings).'})}\n\n"
@@ -154,7 +158,9 @@ async def ask_stream(
     context_parts = []
     seen_sources: dict[str, dict] = {}
     for chunk in chunks:
-        context_parts.append(f"[{chunk.source_name}]\n{chunk.content}")
+        date_str = chunk.modified.date().isoformat() if getattr(chunk, "modified", None) else ""
+        header = f"[{chunk.source_name}{' | ' + date_str if date_str else ''}]"
+        context_parts.append(f"{header}\n{chunk.content}")
         base_id = chunk.source_id.split("::")[0]
         if base_id not in seen_sources:
             seen_sources[base_id] = {"name": chunk.source_name, "url": chunk.source_url or ""}
@@ -163,7 +169,11 @@ async def ask_stream(
     rules = db.execute(select(AskRule)).scalars().all()
     system_prompt = _build_system_prompt(rules)
 
-    messages_payload = [{"role": "user", "content": f"Context:\n{context_text}\n\nQuestion: {question}"}]
+    history_payload = [{"role": h["role"], "content": h["content"]} for h in (history or [])]
+    messages_payload = [
+        *history_payload,
+        {"role": "user", "content": f"Context:\n{context_text}\n\nQuestion: {question}"},
+    ]
 
     if settings.anthropic_api_key:
         try:
@@ -186,6 +196,7 @@ async def ask_stream(
                 if final.stop_reason != "tool_use":
                     break
 
+                yield f"data: {json.dumps({'text': '\n\n*Ieškoma dokumentų...*\n\n'})}\n\n"
                 messages_payload.append({"role": "assistant", "content": final.content})
                 tool_results = []
                 for block in final.content:
@@ -201,7 +212,7 @@ async def ask_stream(
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
-                            "content": _format_file_results(rows),
+                            "content": _format_file_results(rows, MAX_FILE_RESULTS),
                         })
                 if not tool_results:
                     break

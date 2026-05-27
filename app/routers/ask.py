@@ -35,8 +35,16 @@ async def ask_query(
             yield f"data: {json.dumps({'error': 'Empty question.'})}\n\n"
         return StreamingResponse(empty(), media_type="text/event-stream")
 
+    raw_history = body.get("history") or []
+    history = [
+        h for h in raw_history
+        if isinstance(h, dict)
+        and h.get("role") in ("user", "assistant")
+        and isinstance(h.get("content"), str)
+    ][-8:]  # keep last 4 turns (8 messages)
+
     return StreamingResponse(
-        ask_stream(question, db),
+        ask_stream(question, db, history=history),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
