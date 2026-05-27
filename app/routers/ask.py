@@ -41,7 +41,7 @@ async def ask_query(
         if isinstance(h, dict)
         and h.get("role") in ("user", "assistant")
         and isinstance(h.get("content"), str)
-    ][-8:]  # keep last 4 turns (8 messages)
+    ][-2:]  # keep last 1 turn (2 messages) — rate limit budget
 
     return StreamingResponse(
         ask_stream(question, db, history=history),
