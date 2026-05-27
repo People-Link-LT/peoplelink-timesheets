@@ -19,6 +19,7 @@ Always respond in the same language the user asked in (Lithuanian if they asked 
 
 You have a search_files tool that searches the full SharePoint document catalog by company name or keyword. Use it whenever the user wants to find or list specific documents — invoices (sąskaitos), proposals (pasiūlymai), or contracts (sutartys) — for a company. The vector context below only holds a small sample of documents, so for "find/list all X for company Y" questions you MUST call search_files rather than relying on the context. When listing files, show each file name as a clickable markdown link to its URL, grouped sensibly, newest first.
 When using search_files, pass only the company name or core keyword as the query — do not include document-type words (like "sąskaita", "invoice", "pasiūlymas") in the query; use the doc_type parameter for that instead. If results are empty, retry with a shorter or simpler form of the company name.
+The "full path" field in results shows drive/folder/filename. The folder name identifies the company — a file at "Sąskaitos/Light Conversion/S Nr.123.docx" IS a Light Conversion invoice. Trust the folder path completely; never second-guess company attribution based on the filename alone. Present results directly to the user as a markdown list of clickable links.
 
 For general knowledge questions, answer from the context below.
 Always cite the source document for each fact you state. If a URL is available, make it a clickable link: e.g. "According to [Augimo sistema 2025.docx](https://...)..."
@@ -87,12 +88,13 @@ def _format_file_results(rows: list[FileCatalog], limit: int = MAX_FILE_RESULTS)
         return "No matching files found in the catalog."
     lines = [f"Found {len(rows)} matching file(s):"]
     for r in rows:
-        loc = f"{r.drive}/{r.folder_path}".rstrip("/")
+        # Show full path prominently so Claude can identify the owning company from folder name
+        full_path = f"{r.drive}/{r.folder_path}/{r.name}".replace("//", "/")
         date = r.modified.date().isoformat() if r.modified else "unknown date"
         url = r.web_url or ""
-        lines.append(f"- {r.name} | folder: {loc} | modified: {date} | url: {url}")
+        lines.append(f"- full path: {full_path} | modified: {date} | url: {url}")
     if len(rows) >= limit:
-        lines.append("_(Showing newest 60 — there may be more. Try narrowing your search with a date or keyword.)_")
+        lines.append("_(Showing newest 20 — there may be more. Try narrowing your search with a date or keyword.)_")
     return "\n".join(lines)
 
 _openai: AsyncOpenAI | None = None
