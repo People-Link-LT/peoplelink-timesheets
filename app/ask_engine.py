@@ -86,15 +86,24 @@ def search_files(db: Session, query: str, doc_type: str | None = None, limit: in
 def _format_file_results(rows: list[FileCatalog], limit: int = MAX_FILE_RESULTS) -> str:
     if not rows:
         return "No matching files found in the catalog."
-    lines = [f"Found {len(rows)} matching file(s):"]
+
+    # Group by drive/folder so Claude sees company context clearly
+    from collections import defaultdict
+    groups: dict[str, list[FileCatalog]] = defaultdict(list)
     for r in rows:
-        # Show full path prominently so Claude can identify the owning company from folder name
-        full_path = f"{r.drive}/{r.folder_path}/{r.name}".replace("//", "/")
-        date = r.modified.date().isoformat() if r.modified else "unknown date"
-        url = r.web_url or ""
-        lines.append(f"- full path: {full_path} | modified: {date} | url: {url}")
+        folder_key = f"{r.drive}/{r.folder_path}".rstrip("/")
+        groups[folder_key].append(r)
+
+    lines = [f"Found {len(rows)} file(s) across {len(groups)} folder(s):"]
+    for folder_key, files in groups.items():
+        lines.append(f"\nFolder: {folder_key}/ ({len(files)} files)")
+        for r in files:
+            date = r.modified.date().isoformat() if r.modified else "?"
+            url = r.web_url or ""
+            lines.append(f"  - {r.name} | {date} | {url}")
+
     if len(rows) >= limit:
-        lines.append("_(Showing newest 20 — there may be more. Try narrowing your search with a date or keyword.)_")
+        lines.append("\n_(Showing newest 20 — there may be more. Narrow your search with a date or keyword.)_")
     return "\n".join(lines)
 
 _openai: AsyncOpenAI | None = None
@@ -210,7 +219,8 @@ async def ask_stream(
                         )
                         for r in rows:
                             if r.web_url and r.item_id not in seen_sources:
-                                seen_sources[r.item_id] = {"name": r.name, "url": r.web_url}
+                                display = f"{r.folder_path}/{r.name}".lstrip("/") if r.folder_path else r.name
+                                seen_sources[r.item_id] = {"name": display, "url": r.web_url}
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
