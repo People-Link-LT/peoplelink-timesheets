@@ -33,11 +33,18 @@ def init_db():
             ("totp_secret", "VARCHAR(64)"),
             ("email_otp", "VARCHAR(6)"),
             ("email_otp_expires_at", "TIMESTAMP"),
+        ]:
+            try:
+                conn.execute(text(f'ALTER TABLE users ADD COLUMN {col} {definition}'))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+        for col, definition in [
             ("ai_generated", "BOOLEAN NOT NULL DEFAULT FALSE"),
             ("ai_model", "VARCHAR(80)"),
         ]:
             try:
-                conn.execute(text(f'ALTER TABLE users ADD COLUMN {col} {definition}'))
+                conn.execute(text(f'ALTER TABLE doc_meta ADD COLUMN {col} {definition}'))
                 conn.commit()
             except Exception:
                 conn.rollback()
