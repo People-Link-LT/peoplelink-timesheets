@@ -1,9 +1,13 @@
 """
 AI metadata enrichment for FileCatalog and KnowledgeChunk.
 
-FileCatalog: each row gets doc_type, company, doc_number, doc_year, doc_month derived
-             from drive name + folder path + filename via GPT-4o-mini.
-KnowledgeChunk: SharePoint chunks get ai_summary, ai_topics, ai_applies_to.
+For each file in file_catalog:
+  - If the file was content-indexed (has rows in knowledge_chunks), the actual
+    document text is sent to GPT-4o-mini together with the SharePoint location.
+    The AI extracts doc_type, company, doc_number, doc_year, doc_month, a summary,
+    topics, and audience — and both tables are updated from a single API call.
+  - If the file was NOT indexed (binary, .xls, unsupported format), only the
+    drive name + folder path + filename is sent. Only file_catalog is updated.
 
 Idempotent: skips already-enriched rows unless force=True.
 Runs async with a concurrency semaphore to stay within OpenAI rate limits.
@@ -12,6 +16,7 @@ import asyncio
 import json
 import logging
 import unicodedata
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from openai import AsyncOpenAI
@@ -24,8 +29,9 @@ from app.models import FileCatalog, KnowledgeChunk
 
 logger = logging.getLogger(__name__)
 
-_CONCURRENCY = 20   # parallel OpenAI calls
-_BATCH_COMMIT = 100  # rows per DB commit
+_CONCURRENCY = 20    # parallel OpenAI calls
+_BATCH_COMMIT = 50   # rows per DB commit
+_CONTENT_CHARS = 4000  # max document chars to send per file
 
 
 def _normalize(s: str) -> str:
@@ -36,77 +42,85 @@ def _normalize(s: str) -> str:
 # Prompts
 # ---------------------------------------------------------------------------
 
-_FILE_SYSTEM = """\
-You are a document classifier for People Link, a Lithuanian recruitment and HR consulting company.
-Given a SharePoint file location (drive library name, folder path, filename), extract structured metadata.
+_LOCATION_HINTS = """\
+Drive name → doc_type hints (Lithuanian SharePoint library names):
+  Sąskaitos → invoice | Pasiūlymai → proposal
+  Sutartys su klientais → client_contract | Sutartys su tiekėjais → supplier_contract
+  Konfidencialumo sutartys → nda | Darbuotojų darbo sutartys, priedai → employment_contract
+  Freelance ir praktikos sutartys → freelance_contract | Paskolos sutartys → loan_contract
+  Įgaliojimai → power_of_attorney | Įsakymai → order | Prašymai → request
+  Tvarkos → policy | Instrukcijos → instruction
+  Skelbimai / Aktualūs dokumentai → announcement | Mokymai / Akademija → training
+  Logo, marketingas / Komunikacija → marketing | Rezultatai → results | Šablonai → template
+  GDPR dokumentai / Asmens duomenų apsauga → gdpr | Darbų sauga → safety
+  Sveikatos patikra → health_check | Sveikatos draudimas → health_insurance
+  Darbo taryba → works_council | Skolininkai → debt | IT ir mobilūs įrenginiai → it_assets
+  Auto ir kuras → vehicle | Biurai → office | People Link methods / Consulting → consulting
+  Tripod methods (surveys) → survey | Assessment as a Service → assessment
+  Klientų auginimas → client_growth | Kiti dokumentai / Kita → infer from content or filename
 
-Return ONLY valid JSON — no extra text, no markdown:
-{
-  "doc_type": "<one of the types below>",
-  "company": "<client/partner company name, or null for internal docs>",
+Company: for client-facing drives (Sąskaitos, Pasiūlymai, Sutartys su klientais,
+  Sutartys su tiekėjais, Konfidencialumo sutartys, Klientų auginimas) the company
+  name is usually the first folder in the path. Confirm or correct from document content.
+  For internal/HR/admin drives — company is null unless the document itself names a client."""
+
+_VALID_DOC_TYPES = (
+    "invoice, proposal, client_contract, supplier_contract, nda, employment_contract, "
+    "freelance_contract, loan_contract, power_of_attorney, order, request, policy, "
+    "instruction, announcement, training, marketing, results, template, gdpr, safety, "
+    "health_insurance, health_check, works_council, it_assets, vehicle, office, "
+    "consulting, assessment, survey, client_growth, debt, other"
+)
+
+# Used when document content is available — extracts full metadata + summary
+_SYSTEM_WITH_CONTENT = f"""\
+You are a document classifier for People Link, a Lithuanian recruitment and HR consulting company.
+You are given the SharePoint location AND the full text of a document.
+Use the document content as the primary source of truth; use the location as supporting context.
+
+Return ONLY valid JSON — no extra text, no markdown fences:
+{{
+  "doc_type": "<type>",
+  "company": "<client/partner company name extracted from the document, or null>",
   "doc_number": "<serial/reference number as string, or null>",
   "doc_year": <4-digit year as integer, or null>,
-  "doc_month": <month 1-12 as integer, or null>
-}
-
-Valid doc_type values:
-  invoice, proposal, client_contract, supplier_contract, nda, employment_contract,
-  freelance_contract, loan_contract, power_of_attorney, order, request, policy,
-  instruction, announcement, training, marketing, results, template, gdpr, safety,
-  health_insurance, health_check, works_council, it_assets, vehicle, office,
-  consulting, assessment, survey, client_growth, debt, other
-
-Drive name → doc_type hints (Lithuanian drive names):
-  Sąskaitos → invoice
-  Pasiūlymai → proposal
-  Sutartys su klientais → client_contract
-  Sutartys su tiekėjais → supplier_contract
-  Konfidencialumo sutartys → nda
-  Darbuotojų darbo sutartys, priedai → employment_contract
-  Freelance ir praktikos sutartys → freelance_contract
-  Paskolos sutartys → loan_contract
-  Įgaliojimai → power_of_attorney
-  Įsakymai → order
-  Prašymai → request
-  Tvarkos → policy
-  Instrukcijos → instruction
-  Skelbimai / Aktualūs dokumentai → announcement
-  Mokymai / Akademija → training
-  Logo, marketingas / Komunikacija → marketing
-  Rezultatai → results
-  Šablonai → template
-  GDPR dokumentai darbuotojams / Asmens duomenų apsauga → gdpr
-  Darbų sauga → safety
-  Sveikatos patikra → health_check
-  Sveikatos draudimas → health_insurance
-  Darbo taryba → works_council
-  Skolininkai → debt
-  IT ir mobilūs įrenginiai → it_assets
-  Auto ir kuras → vehicle
-  Biurai → office
-  People Link methods / Consulting / Tripod → consulting
-  Tripod methods (surveys) → survey
-  Assessment as a Service → assessment
-  Klientų auginimas → client_growth
-  Kiti dokumentai / Kita → infer from filename; use "other" if unclear
-
-Company extraction:
-  For client-facing drives (Sąskaitos, Pasiūlymai, Sutartys su klientais, Sutartys su tiekėjais,
-  Konfidencialumo sutartys, Klientų auginimas) the FIRST folder segment in the path IS the company.
-  For internal/HR/admin drives — company is null.
-
-Document number: extract from patterns like "Nr. 00678", "Nr.45", "#123", "S Nr.00678".
-Date: year and month may appear as "2025-03", "2025 03", "2025 kovo", "2025 m. kovo", etc.
-"""
-
-_CHUNK_SYSTEM = """\
-Analyze this excerpt from a People Link (Lithuanian HR/recruitment company) internal document.
-Return ONLY valid JSON — no markdown, no extra text:
-{
+  "doc_month": <month 1-12 as integer, or null>,
   "summary": "<1-2 sentence summary in the same language as the document>",
   "topics": ["<topic1>", "<topic2>", "<topic3>"],
   "applies_to": "<all_employees | managers | freelancers | clients | admin | null>"
-}
+}}
+
+Valid doc_type values: {_VALID_DOC_TYPES}
+
+{_LOCATION_HINTS}
+
+For doc_number: look for patterns like "Nr. 00678", "Nr.45", "Sąskaita Nr.", "Sutarties Nr.", "#123".
+For dates: year and month may appear as "2025-03", "2025 kovo", "2025 m. kovo mėn.", "kovo 2025", etc.
+For company: read the document header — the client/counterparty company name is usually near the top.
+For summary: 1-2 sentences describing what this document is and what it covers.
+For applies_to: who this document is relevant to inside People Link.
+"""
+
+# Used when no content is available (binary/unsupported files) — location only
+_SYSTEM_NO_CONTENT = f"""\
+You are a document classifier for People Link, a Lithuanian recruitment and HR consulting company.
+The document text is not available — classify from the SharePoint location alone.
+
+Return ONLY valid JSON — no extra text, no markdown fences:
+{{
+  "doc_type": "<type>",
+  "company": "<client/partner company name from folder path, or null>",
+  "doc_number": "<serial/reference number from filename, or null>",
+  "doc_year": <4-digit year as integer, or null>,
+  "doc_month": <month 1-12 as integer, or null>
+}}
+
+Valid doc_type values: {_VALID_DOC_TYPES}
+
+{_LOCATION_HINTS}
+
+For doc_number: extract from filename patterns like "Nr. 00678", "Nr.45", "S Nr.00678".
+For dates: extract from filename if present — "2025-03", "2025 03", year only, etc.
 """
 
 
@@ -119,7 +133,7 @@ async def _call_json(
     sem: asyncio.Semaphore,
     system: str,
     user: str,
-    max_tokens: int = 200,
+    max_tokens: int = 400,
 ) -> dict | None:
     async with sem:
         try:
@@ -140,38 +154,81 @@ async def _call_json(
 
 
 # ---------------------------------------------------------------------------
-# FileCatalog enrichment
+# Main enrichment pass
 # ---------------------------------------------------------------------------
 
-async def enrich_catalog(db: Session, force: bool = False) -> int:
+async def enrich_all(db: Session, force: bool = False) -> dict:
+    """
+    Single pass: enrich file_catalog using document content from knowledge_chunks.
+    For each file, content is taken from knowledge_chunks (if indexed), otherwise
+    only the SharePoint location is used.
+    Returns {"catalog": N, "chunks": M}.
+    """
     if not settings.openai_api_key:
-        logger.warning("OPENAI_API_KEY not set — skipping catalog enrichment")
-        return 0
+        logger.warning("OPENAI_API_KEY not set — skipping enrichment")
+        return {"catalog": 0, "chunks": 0}
 
+    # Load file_catalog rows that need enrichment
     stmt = select(FileCatalog)
     if not force:
         stmt = stmt.where(FileCatalog.enriched_at.is_(None))
-    rows: list[FileCatalog] = list(db.execute(stmt).scalars().all())
+    catalog_rows: list[FileCatalog] = list(db.execute(stmt).scalars().all())
 
-    if not rows:
-        logger.info("file_catalog: all rows already enriched")
-        return 0
+    if not catalog_rows:
+        logger.info("All file_catalog rows already enriched")
+        return {"catalog": 0, "chunks": 0}
 
-    logger.info(f"file_catalog: enriching {len(rows)} rows")
+    logger.info(f"Enriching {len(catalog_rows)} file_catalog rows")
+
+    # Build a map: item_id → list of KnowledgeChunk (all chunks for that file)
+    # source_id is either "{item_id}" (chunk 0) or "{item_id}::N" (chunk N)
+    all_chunks: list[KnowledgeChunk] = list(
+        db.execute(
+            select(KnowledgeChunk).where(KnowledgeChunk.source_type == "sharepoint")
+        ).scalars().all()
+    )
+    chunks_by_item: dict[str, list[KnowledgeChunk]] = defaultdict(list)
+    for chunk in all_chunks:
+        base_id = chunk.source_id.split("::")[0]
+        chunks_by_item[base_id].append(chunk)
+
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     sem = asyncio.Semaphore(_CONCURRENCY)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    async def _process(row: FileCatalog):
-        user_msg = (
+    cat_enriched = 0
+    chunk_enriched = 0
+
+    async def _process(row: FileCatalog) -> int:
+        """Returns number of knowledge_chunks updated (0 or more)."""
+        file_chunks = chunks_by_item.get(row.item_id, [])
+
+        location_ctx = (
             f"Drive: {row.drive}\n"
             f"Folder: {row.folder_path or '(root)'}\n"
             f"File: {row.name}"
         )
-        result = await _call_json(client, sem, _FILE_SYSTEM, user_msg)
+
+        if file_chunks:
+            # Sort by chunk index so we send the beginning of the document first
+            file_chunks_sorted = sorted(
+                file_chunks,
+                key=lambda c: int(c.source_id.split("::")[-1]) if "::" in c.source_id else 0
+            )
+            # Concatenate up to _CONTENT_CHARS characters
+            combined = "\n\n---\n\n".join(c.content for c in file_chunks_sorted)
+            content_snippet = combined[:_CONTENT_CHARS]
+            user_msg = f"{location_ctx}\n\nDocument content:\n{content_snippet}"
+            result = await _call_json(client, sem, _SYSTEM_WITH_CONTENT, user_msg, max_tokens=400)
+        else:
+            user_msg = location_ctx
+            result = await _call_json(client, sem, _SYSTEM_NO_CONTENT, user_msg, max_tokens=200)
+
         if not result:
-            return
-        row.doc_type = (result.get("doc_type") or "other") or None
+            return 0
+
+        # Update file_catalog
+        row.doc_type = result.get("doc_type") or "other"
         company = result.get("company") or None
         row.company = company
         row.company_norm = _normalize(company) if company else None
@@ -183,61 +240,37 @@ async def enrich_catalog(db: Session, force: bool = False) -> int:
         row.doc_month = int(doc_month) if doc_month else None
         row.enriched_at = now
 
-    enriched = 0
-    for i in range(0, len(rows), _BATCH_COMMIT):
-        batch = rows[i : i + _BATCH_COMMIT]
-        await asyncio.gather(*[_process(r) for r in batch])
-        db.commit()
-        enriched += len(batch)
-        logger.info(f"file_catalog enrichment: {enriched}/{len(rows)}")
+        if not file_chunks:
+            return 0
 
-    return enriched
-
-
-# ---------------------------------------------------------------------------
-# KnowledgeChunk enrichment
-# ---------------------------------------------------------------------------
-
-async def enrich_chunks(db: Session, force: bool = False) -> int:
-    if not settings.openai_api_key:
-        return 0
-
-    stmt = select(KnowledgeChunk).where(KnowledgeChunk.source_type == "sharepoint")
-    if not force:
-        stmt = stmt.where(KnowledgeChunk.ai_summary.is_(None))
-    rows: list[KnowledgeChunk] = list(db.execute(stmt).scalars().all())
-
-    if not rows:
-        logger.info("knowledge_chunks: all SharePoint chunks already enriched")
-        return 0
-
-    logger.info(f"knowledge_chunks: enriching {len(rows)} chunks")
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
-    sem = asyncio.Semaphore(_CONCURRENCY)
-
-    async def _process(chunk: KnowledgeChunk):
-        result = await _call_json(
-            client, sem, _CHUNK_SYSTEM,
-            chunk.content[:3000],
-            max_tokens=300,
-        )
-        if not result:
-            return
-        chunk.ai_summary = result.get("summary") or None
+        # Propagate summary/topics/applies_to to all chunks for this file
+        summary = result.get("summary") or None
         topics = result.get("topics")
-        chunk.ai_topics = json.dumps(topics, ensure_ascii=False) if isinstance(topics, list) else None
+        topics_json = json.dumps(topics, ensure_ascii=False) if isinstance(topics, list) else None
         applies = result.get("applies_to")
-        chunk.ai_applies_to = applies if applies and applies != "null" else None
+        applies_to = applies if applies and applies != "null" else None
 
-    enriched = 0
-    for i in range(0, len(rows), _BATCH_COMMIT):
-        batch = rows[i : i + _BATCH_COMMIT]
-        await asyncio.gather(*[_process(r) for r in batch])
+        for chunk in file_chunks:
+            chunk.ai_summary = summary
+            chunk.ai_topics = topics_json
+            chunk.ai_applies_to = applies_to
+
+        return len(file_chunks)
+
+    # Process in commit-sized batches
+    for i in range(0, len(catalog_rows), _BATCH_COMMIT):
+        batch = catalog_rows[i : i + _BATCH_COMMIT]
+        results = await asyncio.gather(*[_process(r) for r in batch])
         db.commit()
-        enriched += len(batch)
-        logger.info(f"chunk enrichment: {enriched}/{len(rows)}")
+        cat_enriched += len(batch)
+        chunk_enriched += sum(results)
+        logger.info(
+            f"Enrichment progress: {cat_enriched}/{len(catalog_rows)} files "
+            f"({chunk_enriched} chunks updated)"
+        )
 
-    return enriched
+    logger.info(f"Enrichment complete: {cat_enriched} catalog rows, {chunk_enriched} chunks")
+    return {"catalog": cat_enriched, "chunks": chunk_enriched}
 
 
 # ---------------------------------------------------------------------------
@@ -247,9 +280,8 @@ async def enrich_chunks(db: Session, force: bool = False) -> int:
 async def _run_enrichment(force: bool = False) -> dict:
     db = SessionLocal()
     try:
-        cat_count = await enrich_catalog(db, force=force)
-        chunk_count = await enrich_chunks(db, force=force)
-        msg = f"Enriched {cat_count} catalog files + {chunk_count} knowledge chunks"
+        result = await enrich_all(db, force=force)
+        msg = f"Enriched {result['catalog']} catalog files, updated {result['chunks']} knowledge chunks"
         logger.info(msg)
         return {"ok": True, "message": msg}
     except Exception as e:
