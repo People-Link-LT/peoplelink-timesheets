@@ -8,7 +8,10 @@
     <h1 class="text-xl font-semibold text-gray-900">Dokumentų biblioteka</h1>
     <div class="flex items-center gap-1 mt-1 text-sm text-gray-400 flex-wrap">
       <a href="/documents" class="hover:text-blue-600 font-medium">Dokumentų biblioteka</a>
-      {% if current_drive %}
+      {% if current_category %}
+      <span class="text-gray-300">/</span>
+      <span class="text-gray-700">{{ current_category }}</span>
+      {% elif current_drive %}
       <span class="text-gray-300">/</span>
       {% if breadcrumb %}
         <a href="/documents/browse?drive={{ current_drive | urlencode }}" class="hover:text-blue-600">{{ current_drive }}</a>
@@ -39,6 +42,54 @@
     Upload
   </a>
 </div>
+
+{# ── subcategory grid ─────────────────────────────────────────────────────── #}
+{% if subcategories %}
+{% macro audience_chip(a) %}
+  <span class="text-xs px-1.5 py-0.5 rounded font-medium
+    {% if a == 'Managers' %}bg-blue-100 text-blue-700
+    {% elif a == 'Everybody' %}bg-green-100 text-green-700
+    {% elif a == 'Admin' %}bg-amber-100 text-amber-700
+    {% else %}bg-purple-100 text-purple-700{% endif %}">{{ a }}</span>
+{% endmacro %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+  {% for sub in subcategories %}
+  {% set meta = metas.get(sub.key, {}) %}
+  <div class="bg-white rounded-2xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all group flex flex-col">
+    <a href="{{ sub.browse_url }}" class="flex-1 px-5 pt-5 pb-3 block">
+      <div class="flex items-start justify-between gap-2">
+        <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 {{ sub.color_bg }}">
+          <svg class="w-4 h-4 {{ sub.color_icon }}" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/>
+          </svg>
+        </div>
+        <span class="text-gray-300 group-hover:text-blue-400 transition-colors mt-1 text-lg leading-none">→</span>
+      </div>
+      <p class="font-semibold text-gray-900 text-sm mt-3 leading-snug">{{ sub.name }}</p>
+      {% if meta.get('comment') %}
+        <p class="text-xs text-gray-400 mt-1.5 line-clamp-2">{{ meta['comment'] }}</p>
+      {% else %}
+        <p class="text-xs text-gray-300 italic mt-1.5">No description yet</p>
+      {% endif %}
+      {% if meta.get('audience') %}
+      <div class="flex flex-wrap gap-1 mt-2">
+        {% for a in meta['audience'] %}{{ audience_chip(a) }}{% endfor %}
+      </div>
+      {% endif %}
+    </a>
+    <div class="px-5 pb-4 flex items-center justify-between border-t border-gray-50 pt-3">
+      <span class="text-xs text-gray-300 truncate">{{ sub.drive }}</span>
+      <button onclick="openMeta(event, '{{ sub.key }}', {{ sub.name | tojson }}, {{ (meta.get('comment','')) | tojson }}, {{ (meta.get('audience') or []) | tojson }}, {{ sub.key | tojson }}, {{ sub.drive | tojson }})"
+              class="text-gray-300 hover:text-blue-500 transition-colors shrink-0" title="Edit description">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536M9 11l6-6 3 3-6 6H9v-3z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 {% if error %}
 <div class="bg-red-50 border border-red-200 text-red-800 rounded-xl px-5 py-4 mb-5 text-sm">
@@ -293,7 +344,7 @@
   <div class="px-5 py-4 space-y-4">
     <div>
       <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-        Comment
+        Description
       </label>
       <textarea id="meta-comment"
                 rows="3"
@@ -301,7 +352,15 @@
                 class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800
                        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
                        resize-none placeholder-gray-300"></textarea>
-      <p class="text-xs text-gray-400 mt-1">Visible to all users and indexed by Ask PL.</p>
+      <div class="flex items-center justify-between mt-1">
+        <p class="text-xs text-gray-400">Indexed by Ask PL.</p>
+        <button type="button" id="ai-gen-btn" onclick="generateDescription()"
+                class="text-xs text-purple-600 hover:text-purple-800 flex items-center gap-1 font-medium">
+          <span>✦ Generate with AI</span>
+          <span id="ai-gen-spinner" class="hidden animate-spin">⟳</span>
+        </button>
+      </div>
+      <p id="ai-gen-model" class="text-xs text-gray-300 mt-0.5 hidden text-right"></p>
     </div>
 
     <div>
@@ -439,37 +498,96 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeViewe
 // ── meta edit modal ────────────────────────────────────────────────────────
 
 let _metaRow = null;
+let _metaSubKey = null;   // set when editing a subcategory card (not a file row)
+let _metaSubDrive = null;
+let _aiGenerated = false;
+let _aiModel = '';
 
-function openMeta(event, row) {
+function openMeta(event, rowOrKey, nameOrUnused, commentOrUnused, audienceOrUnused, subKey, subDrive) {
   event.stopPropagation();
-  _metaRow = row;
+  _aiGenerated = false;
+  _aiModel = '';
+  document.getElementById('ai-gen-model').classList.add('hidden');
 
-  const name     = row.dataset.name;
-  const comment  = row.dataset.comment || '';
-  const audience = JSON.parse(row.dataset.audience || '[]');
-
-  document.getElementById('meta-item-name').textContent = name;
-  document.getElementById('meta-comment').value = comment;
-
-  // Reset audience buttons
-  document.querySelectorAll('#meta-modal .audience-btn').forEach(btn => {
-    const selected = audience.includes(btn.dataset.audience);
-    btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
-    btn.style.fontWeight = selected ? '600' : '';
-    btn.style.opacity    = selected ? '1' : '0.6';
-    btn.style.boxShadow  = selected ? '0 0 0 2px currentColor' : '';
-  });
+  if (typeof rowOrKey === 'string') {
+    // Called from subcategory card: openMeta(event, key, name, comment, audience, subKey, subDrive)
+    _metaRow = null;
+    _metaSubKey   = subKey || rowOrKey;
+    _metaSubDrive = subDrive || '';
+    document.getElementById('meta-item-name').textContent = nameOrUnused || rowOrKey;
+    document.getElementById('meta-comment').value = commentOrUnused || '';
+    const aud = Array.isArray(audienceOrUnused) ? audienceOrUnused : [];
+    document.querySelectorAll('#meta-modal .audience-btn').forEach(btn => {
+      const sel = aud.includes(btn.dataset.audience);
+      btn.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      btn.style.fontWeight = sel ? '600' : '';
+      btn.style.opacity    = sel ? '1' : '0.6';
+      btn.style.boxShadow  = sel ? '0 0 0 2px currentColor' : '';
+    });
+  } else {
+    // Called from file table row
+    _metaRow = rowOrKey;
+    _metaSubKey = null;
+    _metaSubDrive = null;
+    const name     = _metaRow.dataset.name;
+    const comment  = _metaRow.dataset.comment || '';
+    const audience = JSON.parse(_metaRow.dataset.audience || '[]');
+    document.getElementById('meta-item-name').textContent = name;
+    document.getElementById('meta-comment').value = comment;
+    document.querySelectorAll('#meta-modal .audience-btn').forEach(btn => {
+      const selected = audience.includes(btn.dataset.audience);
+      btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      btn.style.fontWeight = selected ? '600' : '';
+      btn.style.opacity    = selected ? '1' : '0.6';
+      btn.style.boxShadow  = selected ? '0 0 0 2px currentColor' : '';
+    });
+  }
 
   const modal    = document.getElementById('meta-modal');
   const backdrop = document.getElementById('meta-backdrop');
-  modal.style.transform    = '';  // clear any inline transform from SM breakpoint
+  modal.style.transform = '';
   backdrop.classList.remove('hidden');
-  // Trigger animation
   requestAnimationFrame(() => {
     modal.style.transform = 'translateY(0)';
     modal.classList.remove('translate-y-full');
   });
   document.getElementById('meta-comment').focus();
+}
+
+async function generateDescription() {
+  const itemId = _metaSubKey || (_metaRow ? _metaRow.dataset.itemId : '');
+  const name   = document.getElementById('meta-item-name').textContent;
+  const drive  = _metaSubDrive || (_metaRow ? _metaRow.dataset.drive : '');
+  if (!itemId && !name) return;
+
+  const btn = document.getElementById('ai-gen-btn');
+  const spinner = document.getElementById('ai-gen-spinner');
+  btn.disabled = true;
+  spinner.classList.remove('hidden');
+
+  try {
+    const resp = await fetch('/documents/api/meta/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: itemId, name, drive }),
+    });
+    const data = await resp.json();
+    if (data.ok && data.description) {
+      document.getElementById('meta-comment').value = data.description;
+      _aiGenerated = true;
+      _aiModel = data.model || '';
+      const modelEl = document.getElementById('ai-gen-model');
+      modelEl.textContent = `Generated by ${data.model}`;
+      modelEl.classList.remove('hidden');
+    } else {
+      alert('Could not generate. Check that ANTHROPIC_API_KEY or OPENAI_API_KEY is configured.');
+    }
+  } catch (err) {
+    alert('Generation failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    spinner.classList.add('hidden');
+  }
 }
 
 function toggleAudience(btn) {
@@ -487,16 +605,16 @@ function closeMeta() {
 }
 
 async function saveMeta() {
-  if (!_metaRow) return;
+  if (!_metaRow && !_metaSubKey) return;
 
   const btn = document.getElementById('meta-save-btn');
   btn.textContent = 'Saving…';
   btn.disabled = true;
 
-  const item_id  = _metaRow.dataset.itemId;
-  const drive    = _metaRow.dataset.drive || '';
-  const path     = _metaRow.dataset.path  || '';
-  const name     = _metaRow.dataset.name  || '';
+  const item_id  = _metaSubKey || _metaRow.dataset.itemId;
+  const drive    = _metaSubDrive || (_metaRow ? _metaRow.dataset.drive : '') || '';
+  const path     = _metaRow ? (_metaRow.dataset.path || '') : '';
+  const name     = document.getElementById('meta-item-name').textContent || (_metaRow ? _metaRow.dataset.name : '');
   const comment  = document.getElementById('meta-comment').value.trim();
   const audience = [...document.querySelectorAll('#meta-modal .audience-btn[aria-pressed="true"]')]
                      .map(b => b.dataset.audience);
@@ -505,7 +623,7 @@ async function saveMeta() {
     const resp = await fetch('/documents/api/meta', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item_id, drive, path, name, comment, audience }),
+      body: JSON.stringify({ item_id, drive, path, name, comment, audience, ai_generated: _aiGenerated, ai_model: _aiModel }),
     });
     const data = await resp.json();
     if (!data.ok) throw new Error(data.error || 'Save failed');

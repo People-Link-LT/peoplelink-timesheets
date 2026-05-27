@@ -194,6 +194,23 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
             continue
 
         full_text = full_text.replace("\x00", "")  # PostgreSQL rejects NUL characters
+
+        # Prepend stored description so Ask PL has richer context for this file
+        from app.models import DocMeta as _DocMeta
+        import json as _json
+        doc_meta = db.execute(
+            select(_DocMeta).where(_DocMeta.item_id == f["id"])
+        ).scalar_one_or_none()
+        if doc_meta and doc_meta.comment:
+            audience_str = ""
+            try:
+                aud = _json.loads(doc_meta.audience) if doc_meta.audience else []
+                if aud:
+                    audience_str = f" (Audience: {', '.join(aud)})"
+            except Exception:
+                pass
+            full_text = f"Description: {doc_meta.comment}{audience_str}\n\n{full_text}"
+
         raw_chunks = _chunk_text(full_text)[:MAX_CHUNKS_PER_FILE]
         if not raw_chunks:
             continue
@@ -239,6 +256,11 @@ async def _index_one_drive(db: Session, drive_name: str, sp_kwargs: dict, http, 
     return indexed
 
 
+def _all_category_drives() -> list[str]:
+    from app.routers.documents import _all_category_drives as _cat_drives
+    return _cat_drives()
+
+
 async def _index_sharepoint(db: Session) -> int:
     if not all([
         settings.sharepoint_tenant_id,
@@ -249,10 +271,15 @@ async def _index_sharepoint(db: Session) -> int:
 
     import httpx
 
-    drives_raw = settings.sharepoint_index_drives or settings.sharepoint_drive_name
-    drives = [d.strip() for d in drives_raw.split(",") if d.strip()]
+    drives_raw = settings.sharepoint_index_drives
+    if drives_raw:
+        drives = [d.strip() for d in drives_raw.split(",") if d.strip()]
+    else:
+        drives = _all_category_drives()
+        logger.info(f"SHAREPOINT_INDEX_DRIVES not set — auto-indexing {len(drives)} category drives")
+
     if not drives:
-        logger.warning("No drives configured for indexing (SHAREPOINT_INDEX_DRIVES not set)")
+        logger.warning("No drives found for indexing")
         return 0
 
     sp_kwargs = dict(

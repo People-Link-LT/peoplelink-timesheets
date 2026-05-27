@@ -20,7 +20,8 @@ When multiple documents cover the same topic, prefer the most recent one.
 Be concise and professional. For list-style questions, use bullet points."""
 
 EMBEDDING_MODEL = "text-embedding-3-small"
-CHAT_MODEL = "gpt-4o-mini"
+CHAT_MODEL_OPENAI = "gpt-4o-mini"
+CHAT_MODEL_ANTHROPIC = "claude-haiku-4-5-20251001"
 TOP_K = 15
 
 _openai: AsyncOpenAI | None = None
@@ -91,24 +92,43 @@ async def ask_stream(
     rules = db.execute(select(AskRule)).scalars().all()
     system_prompt = _build_system_prompt(rules)
 
-    try:
-        stream = await _get_openai().chat.completions.create(
-            model=CHAT_MODEL,
-            max_tokens=2048,
-            stream=True,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Context:\n{context_text}\n\nQuestion: {question}"},
-            ],
-        )
-        async for chunk in stream:
-            text = chunk.choices[0].delta.content
-            if text:
-                yield f"data: {json.dumps({'text': text})}\n\n"
-    except Exception as e:
-        logger.error(f"OpenAI chat failed: {type(e).__name__}: {e}")
-        yield f"data: {json.dumps({'error': 'Could not generate a response. Please try again.'})}\n\n"
-        return
+    messages_payload = [{"role": "user", "content": f"Context:\n{context_text}\n\nQuestion: {question}"}]
+
+    if settings.anthropic_api_key:
+        try:
+            import anthropic
+            client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+            async with client.messages.stream(
+                model=CHAT_MODEL_ANTHROPIC,
+                max_tokens=2048,
+                system=system_prompt,
+                messages=messages_payload,
+            ) as stream:
+                async for text in stream.text_stream:
+                    yield f"data: {json.dumps({'text': text})}\n\n"
+        except Exception as e:
+            logger.error(f"Anthropic chat failed: {type(e).__name__}: {e}")
+            yield f"data: {json.dumps({'error': 'Could not generate a response. Please try again.'})}\n\n"
+            return
+    else:
+        try:
+            stream = await _get_openai().chat.completions.create(
+                model=CHAT_MODEL_OPENAI,
+                max_tokens=2048,
+                stream=True,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    *messages_payload,
+                ],
+            )
+            async for chunk in stream:
+                text = chunk.choices[0].delta.content
+                if text:
+                    yield f"data: {json.dumps({'text': text})}\n\n"
+        except Exception as e:
+            logger.error(f"OpenAI chat failed: {type(e).__name__}: {e}")
+            yield f"data: {json.dumps({'error': 'Could not generate a response. Please try again.'})}\n\n"
+            return
 
     sources = list(seen_sources.values())
     yield f"data: {json.dumps({'done': True, 'sources': sources})}\n\n"

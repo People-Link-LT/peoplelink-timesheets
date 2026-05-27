@@ -136,6 +136,8 @@ class DocMeta(Base):
     name: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     audience: Mapped[str | None] = mapped_column(String(300), nullable=True)  # JSON array
+    ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
