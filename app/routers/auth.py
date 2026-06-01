@@ -11,7 +11,8 @@ from app.models import User
 from app.auth import (
     hash_password, verify_password, create_access_token,
     create_2fa_pending_token, verify_2fa_pending_token,
-    get_optional_user, COOKIE_NAME, COOKIE_2FA
+    create_2fa_trust_token, verify_2fa_trust_token,
+    get_optional_user, COOKIE_NAME, COOKIE_2FA, COOKIE_2FA_TRUST, _TRUST_DAYS,
 )
 
 router = APIRouter()
@@ -63,6 +64,12 @@ def login_submit(
         return templates.TemplateResponse(request, "login.html", {"error": error})
 
     if user.is_2fa_enabled:
+        trust = request.cookies.get(COOKIE_2FA_TRUST)
+        if trust and verify_2fa_trust_token(trust, user.id):
+            response = RedirectResponse("/timesheet", status_code=302)
+            _set_auth_cookie(response, user.id)
+            return response
+
         method = user.twofa_method or "totp"
         if method == "email":
             _send_email_otp(user, db, background_tasks)
@@ -131,6 +138,11 @@ def login_2fa_submit(
     response = RedirectResponse("/timesheet", status_code=302)
     _set_auth_cookie(response, user.id)
     response.delete_cookie(COOKIE_2FA)
+    response.set_cookie(
+        COOKIE_2FA_TRUST, create_2fa_trust_token(user.id),
+        httponly=True, samesite="lax", secure=True,
+        max_age=60 * 60 * 24 * _TRUST_DAYS,
+    )
     return response
 
 
@@ -155,6 +167,7 @@ def logout():
     response = RedirectResponse("/login", status_code=302)
     response.delete_cookie(COOKIE_NAME)
     response.delete_cookie(COOKIE_2FA)
+    response.delete_cookie(COOKIE_2FA_TRUST)
     return response
 
 
