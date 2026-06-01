@@ -160,18 +160,9 @@ def _format_file_results(rows: list[FileCatalog], limit: int = MAX_FILE_RESULTS)
         lines.append("\n_(Showing newest 20 — there may be more. Narrow your search with a date or keyword.)_")
     return "\n".join(lines)
 
-_openai: AsyncOpenAI | None = None
-
-
-def _get_openai() -> AsyncOpenAI:
-    global _openai
-    if _openai is None:
-        _openai = AsyncOpenAI(api_key=settings.openai_api_key)
-    return _openai
-
-
 async def embed_text(text: str) -> list[float]:
-    resp = await _get_openai().embeddings.create(model=EMBEDDING_MODEL, input=text)
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    resp = await client.embeddings.create(model=EMBEDDING_MODEL, input=text)
     return resp.data[0].embedding
 
 
@@ -292,7 +283,7 @@ async def ask_stream(
             return
     else:
         try:
-            stream = await _get_openai().chat.completions.create(
+            stream = await AsyncOpenAI(api_key=settings.openai_api_key).chat.completions.create(
                 model=CHAT_MODEL_OPENAI,
                 max_tokens=2048,
                 stream=True,
