@@ -1,6 +1,4 @@
-import asyncio
 import logging
-import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -15,29 +13,6 @@ from app.scheduler import start_scheduler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-def _catchup_backup() -> None:
-    """Run on startup: if today's backup is missing (service was down at 02:30), create it now."""
-    from datetime import date, timezone as tz
-    from datetime import datetime as dt
-    from app.backup import run_backup, _check_backup_exists
-
-    now_utc = dt.now(tz.utc)
-    # Only catch up if it's already past the scheduled backup window (02:30 UTC)
-    if now_utc.hour < 3:
-        return
-    today = date.today().strftime("%Y%m%d")
-    try:
-        missing = asyncio.run(_check_backup_exists(today))
-    except Exception as e:
-        logger.warning(f"Startup backup-check failed: {e}")
-        return
-    if missing:
-        logger.info(f"Startup catch-up: today's backup missing ({missing}), running now…")
-        run_backup()
-    else:
-        logger.info("Startup backup-check passed — today's backup already exists.")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -71,7 +46,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Startup Invenias sync failed: {e}")
     start_scheduler()
-    threading.Thread(target=_catchup_backup, daemon=True, name="catchup-backup").start()
 
     # Indexing runs on schedule (07:00 + 13:00 Vilnius) and via the admin
     # "Re-index" button — not on startup, to avoid worker starvation on boot.

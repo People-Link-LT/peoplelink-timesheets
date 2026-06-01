@@ -18,6 +18,9 @@ _SKIP_DIRS = {"__pycache__", ".git", "node_modules"}
 _SKIP_EXTS = {".pyc", ".pyo"}
 
 
+_SKIP_COLUMNS = {"embedding"}  # pgvector columns — too large and non-portable as SQL strings
+
+
 def _db_export() -> bytes:
     """Export all tables as SQL INSERT statements using SQLAlchemy."""
     db = SessionLocal()
@@ -25,20 +28,23 @@ def _db_export() -> bytes:
         buf = io.StringIO()
         buf.write(f"-- PeopleLink Timesheets backup\n-- {datetime.now(timezone.utc).isoformat()}\n\n")
 
-        # Get all table names in dependency order
         tables = db.execute(text(
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
         )).fetchall()
 
         for (table,) in tables:
-            rows = db.execute(text(f'SELECT * FROM "{table}"')).fetchall()
+            cols = db.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = :t AND table_schema = 'public' ORDER BY ordinal_position"
+            ), {"t": table}).fetchall()
+            # Skip vector columns — pgvector binary data is too large and not portable as SQL
+            export_cols = [c[0] for c in cols if c[0] not in _SKIP_COLUMNS]
+            if not export_cols:
+                continue
+            col_list = ", ".join(f'"{c}"' for c in export_cols)
+            rows = db.execute(text(f'SELECT {col_list} FROM "{table}"')).fetchall()
             if not rows:
                 continue
-            cols = db.execute(text(
-                f"SELECT column_name FROM information_schema.columns "
-                f"WHERE table_name = :t AND table_schema = 'public' ORDER BY ordinal_position"
-            ), {"t": table}).fetchall()
-            col_names = ", ".join(f'"{c[0]}"' for c in cols)
             buf.write(f'\n-- Table: {table} ({len(rows)} rows)\n')
             for row in rows:
                 vals = ", ".join(
@@ -46,7 +52,7 @@ def _db_export() -> bytes:
                     else f"'{str(v).replace(chr(39), chr(39)+chr(39))}'"
                     for v in row
                 )
-                buf.write(f'INSERT INTO "{table}" ({col_names}) VALUES ({vals});\n')
+                buf.write(f'INSERT INTO "{table}" ({col_list}) VALUES ({vals});\n')
 
         return buf.getvalue().encode("utf-8")
     finally:
