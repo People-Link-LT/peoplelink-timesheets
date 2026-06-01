@@ -42,6 +42,7 @@ def init_db():
         for col, definition in [
             ("ai_generated", "BOOLEAN NOT NULL DEFAULT FALSE"),
             ("ai_model", "VARCHAR(80)"),
+            ("is_archive", "BOOLEAN NOT NULL DEFAULT FALSE"),
         ]:
             try:
                 conn.execute(text(f'ALTER TABLE doc_meta ADD COLUMN {col} {definition}'))
@@ -93,6 +94,7 @@ def init_db():
             ("ai_summary",    "TEXT"),
             ("ai_topics",     "TEXT"),
             ("ai_applies_to", "VARCHAR(50)"),
+            ("is_archive",    "BOOLEAN NOT NULL DEFAULT FALSE"),
         ]:
             try:
                 conn.execute(text(f"ALTER TABLE knowledge_chunks ADD COLUMN {col} {definition}"))

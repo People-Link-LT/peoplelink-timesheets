@@ -174,13 +174,24 @@ def _build_system_prompt(rules: list[AskRule]) -> str:
     return f"{_SYSTEM_BASE}\n\nADMIN RULES:\n{rules_block}"
 
 
-def search_chunks(query_embedding: list[float], db: Session, k: int = TOP_K) -> list[KnowledgeChunk]:
-    results = db.execute(
+_ARCHIVE_KEYWORDS = {"archive", "archyvas", "archyvą", "archyvus", "archyviniai", "archyvuoti", "archyvinis"}
+
+
+def _wants_archive(question: str) -> bool:
+    q = question.lower()
+    return any(kw in q for kw in _ARCHIVE_KEYWORDS)
+
+
+def search_chunks(query_embedding: list[float], db: Session, k: int = TOP_K, include_archive: bool = False) -> list[KnowledgeChunk]:
+    stmt = (
         select(KnowledgeChunk)
         .where(KnowledgeChunk.embedding.isnot(None))
         .where(KnowledgeChunk.source_type != "invenias")
-        .order_by(KnowledgeChunk.embedding.cosine_distance(query_embedding))
-        .limit(k)
+    )
+    if not include_archive:
+        stmt = stmt.where(KnowledgeChunk.is_archive == False)
+    results = db.execute(
+        stmt.order_by(KnowledgeChunk.embedding.cosine_distance(query_embedding)).limit(k)
     ).scalars().all()
     return results
 
@@ -202,7 +213,8 @@ async def ask_stream(
         yield f"data: {json.dumps({'error': msg})}\n\n"
         return
 
-    chunks = search_chunks(query_vec, db)
+    include_archive = _wants_archive(question)
+    chunks = search_chunks(query_vec, db, include_archive=include_archive)
 
     # With no vector context AND no file catalog to search, there's nothing to answer from.
     catalog_has_files = db.execute(select(FileCatalog.id).limit(1)).first() is not None
@@ -225,6 +237,8 @@ async def ask_stream(
             seen_sources[base_id] = {"name": chunk.source_name, "url": chunk.source_url or ""}
 
     context_text = "\n\n---\n\n".join(context_parts) if context_parts else "(no documents matched the vector search; use the search_files tool to find files)"
+    if include_archive and context_parts:
+        context_text = "(Note: archive documents are included in this search.)\n\n" + context_text
     rules = db.execute(select(AskRule)).scalars().all()
     system_prompt = _build_system_prompt(rules)
 

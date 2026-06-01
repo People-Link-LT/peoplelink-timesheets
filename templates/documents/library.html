@@ -56,14 +56,28 @@
 
     <div class="px-5 pb-4 flex items-center justify-between border-t border-gray-50 pt-3">
       <span class="text-xs text-gray-300 truncate max-w-[120px]">{{ cat.name }}</span>
-      <button onclick="openMeta(event, '{{ cat.key }}', {{ cat.name | tojson }}, {{ (meta.get('comment','')) | tojson }}, {{ (meta.get('audience') or []) | tojson }})"
-              class="text-gray-300 hover:text-blue-500 transition-colors shrink-0"
-              title="Edit description &amp; audience">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M15.232 5.232l3.536 3.536M9 11l6-6 3 3-6 6H9v-3z"/>
-        </svg>
-      </button>
+      <div class="flex items-center gap-2 shrink-0">
+        {% if user.is_admin %}
+        {% set is_arch = meta.get('is_archive', false) %}
+        <button onclick="toggleArchiveCat(event, '{{ cat.key }}', {{ cat.name | tojson }}, {{ (meta.get('comment','')) | tojson }}, {{ (meta.get('audience') or []) | tojson }}, this)"
+                class="archive-cat-btn transition-colors {% if is_arch %}text-amber-400 hover:text-amber-600{% else %}text-gray-200 hover:text-amber-400{% endif %}"
+                data-archive="{{ 'true' if is_arch else 'false' }}"
+                title="{{ 'Unarchive category' if is_arch else 'Archive category (exclude from Ask PL)' }}">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+          </svg>
+        </button>
+        {% endif %}
+        <button onclick="openMeta(event, '{{ cat.key }}', {{ cat.name | tojson }}, {{ (meta.get('comment','')) | tojson }}, {{ (meta.get('audience') or []) | tojson }})"
+                class="text-gray-300 hover:text-blue-500 transition-colors shrink-0"
+                title="Edit description &amp; audience">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M15.232 5.232l3.536 3.536M9 11l6-6 3 3-6 6H9v-3z"/>
+          </svg>
+        </button>
+      </div>
     </div>
   </div>
   {% endfor %}
@@ -235,6 +249,32 @@ async function saveMeta() {
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMeta(); });
+
+async function toggleArchiveCat(event, key, name, comment, audience, btn) {
+  event.stopPropagation();
+  const isArchive = btn.dataset.archive === 'true';
+  const newVal = !isArchive;
+  try {
+    const resp = await fetch('/documents/api/meta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        item_id: key, drive: '', path: '', name,
+        comment, audience, is_archive: newVal,
+      }),
+    });
+    if (!(await resp.json()).ok) throw new Error('Save failed');
+    btn.dataset.archive = newVal ? 'true' : 'false';
+    btn.classList.toggle('text-amber-400', newVal);
+    btn.classList.toggle('hover:text-amber-600', newVal);
+    btn.classList.toggle('text-gray-200', !newVal);
+    btn.classList.toggle('hover:text-amber-400', !newVal);
+    btn.title = newVal ? 'Unarchive category' : 'Archive category (exclude from Ask PL)';
+    btn.closest('.flex.flex-col').classList.toggle('opacity-50', newVal);
+  } catch (err) {
+    alert('Could not update: ' + err.message);
+  }
+}
 </script>
 
 {% endblock %}

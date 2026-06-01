@@ -234,8 +234,9 @@ async def library_home(
     rows = db.execute(select(DocMeta).where(DocMeta.item_id.in_(cat_keys))).scalars().all()
     metas = {
         r.item_id: {
-            "comment":  r.comment or "",
-            "audience": _json.loads(r.audience) if r.audience else [],
+            "comment":    r.comment or "",
+            "audience":   _json.loads(r.audience) if r.audience else [],
+            "is_archive": r.is_archive,
         }
         for r in rows
     }
@@ -269,8 +270,9 @@ async def browse(
             rows = db.execute(select(DocMeta).where(DocMeta.item_id.in_(sub_keys))).scalars().all()
             metas = {
                 r.item_id: {
-                    "comment":  r.comment or "",
-                    "audience": _json.loads(r.audience) if r.audience else [],
+                    "comment":    r.comment or "",
+                    "audience":   _json.loads(r.audience) if r.audience else [],
+                    "is_archive": r.is_archive,
                 }
                 for r in rows
             }
@@ -324,10 +326,11 @@ async def browse(
         rows = db.execute(select(DocMeta).where(DocMeta.item_id.in_(item_ids))).scalars().all()
         metas = {
             r.item_id: {
-                "comment": r.comment or "",
-                "audience": _json.loads(r.audience) if r.audience else [],
+                "comment":    r.comment or "",
+                "audience":   _json.loads(r.audience) if r.audience else [],
                 "ai_generated": r.ai_generated,
-                "ai_model": r.ai_model or "",
+                "ai_model":   r.ai_model or "",
+                "is_archive": r.is_archive,
             }
             for r in rows
         }
@@ -386,6 +389,7 @@ async def save_meta(
 
     ai_generated = bool(body.get("ai_generated", False))
     ai_model = (body.get("ai_model") or "").strip() or None
+    is_archive = bool(body.get("is_archive", False))
 
     existing = db.execute(select(DocMeta).where(DocMeta.item_id == item_id)).scalar_one_or_none()
     now = datetime.now(timezone.utc)
@@ -395,6 +399,7 @@ async def save_meta(
         existing.audience = _json.dumps(audience) if audience else None
         existing.ai_generated = ai_generated
         existing.ai_model = ai_model
+        existing.is_archive = is_archive
         existing.updated_by = user.full_name
         existing.updated_at = now
     else:
@@ -407,6 +412,7 @@ async def save_meta(
             audience=_json.dumps(audience) if audience else None,
             ai_generated=ai_generated,
             ai_model=ai_model,
+            is_archive=is_archive,
             updated_by=user.full_name,
             updated_at=now,
         ))

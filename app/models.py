@@ -125,6 +125,7 @@ class KnowledgeChunk(Base):
     embedding = mapped_column(Vector(1536), nullable=True)
     modified: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     indexed_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    is_archive: Mapped[bool] = mapped_column(Boolean, default=False)
     # AI-generated enrichment
     ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_topics: Mapped[str | None] = mapped_column(Text, nullable=True)   # JSON array
@@ -143,6 +144,7 @@ class DocMeta(Base):
     audience: Mapped[str | None] = mapped_column(String(300), nullable=True)  # JSON array
     ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
     ai_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    is_archive: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 

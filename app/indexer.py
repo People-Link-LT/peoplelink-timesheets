@@ -120,6 +120,14 @@ async def _index_assignments(db: Session) -> int:
     return indexed
 
 
+def _is_path_archived(folder_path: str, archived_paths: set[str]) -> bool:
+    """Return True if folder_path equals or is under any archived path."""
+    for ap in archived_paths:
+        if folder_path == ap or folder_path.startswith(ap + "/"):
+            return True
+    return False
+
+
 async def _index_one_drive(
     db: Session,
     drive_name: str,
@@ -128,6 +136,8 @@ async def _index_one_drive(
     now: datetime,
     changed_items: list[dict] | None = None,
     deleted_item_ids: list[str] | None = None,
+    archived_item_ids: set[str] | None = None,
+    archived_paths: set[str] | None = None,
 ) -> int:
     from app.sharepoint import list_files, resolve_token_and_drive
 
@@ -190,6 +200,13 @@ async def _index_one_drive(
             logger.warning(f"[{drive_name}] Skipping {name} — {file_size:,} bytes (>{MAX_FILE_BYTES//1024//1024} MB)")
             skipped_size += 1
             continue
+
+        # Determine archive status: file-level or folder-level
+        file_folder_path = f.get("folder_path", "")
+        file_is_archive = bool(
+            (archived_item_ids and f["id"] in archived_item_ids) or
+            (archived_paths and _is_path_archived(file_folder_path, archived_paths))
+        )
 
         # Incremental: skip if already indexed and not modified since
         file_modified: datetime | None = None
@@ -304,6 +321,7 @@ async def _index_one_drive(
                 embedding=embedding,
                 modified=file_modified.replace(tzinfo=None) if file_modified else None,
                 indexed_at=now,
+                is_archive=file_is_archive,
             ))
             file_indexed += 1
 
@@ -460,7 +478,11 @@ async def _build_file_catalog(db: Session) -> int:
     return total
 
 
-async def _index_sharepoint(db: Session) -> int:
+async def _index_sharepoint(
+    db: Session,
+    archived_item_ids: set[str] | None = None,
+    archived_paths_by_drive: dict[str, set[str]] | None = None,
+) -> int:
     if not all([
         settings.sharepoint_tenant_id,
         settings.sharepoint_client_id,
@@ -523,6 +545,8 @@ async def _index_sharepoint(db: Session) -> int:
                 count = await _index_one_drive(
                     db, drive_name, sp_kwargs, http, now,
                     changed_items=changed_files, deleted_item_ids=deleted_ids,
+                    archived_item_ids=archived_item_ids,
+                    archived_paths=archived_paths_by_drive.get(drive_name) if archived_paths_by_drive else None,
                 )
                 logger.info(f"[{drive_name}] Indexed {count} chunks")
                 total += count
@@ -610,8 +634,20 @@ async def _run_indexing() -> dict:
         db.execute(delete(KnowledgeChunk).where(KnowledgeChunk.source_type == "invenias"))
         db.commit()
 
+        # Load all archived DocMeta items once so indexing functions can check
+        from app.models import DocMeta as _DocMeta
+        archived_rows = db.execute(
+            select(_DocMeta).where(_DocMeta.is_archive == True)
+        ).scalars().all()
+        archived_item_ids: set[str] = {r.item_id for r in archived_rows}
+        # Group archived paths by drive for folder-level matching
+        archived_paths_by_drive: dict[str, set[str]] = {}
+        for r in archived_rows:
+            if r.drive and r.path:
+                archived_paths_by_drive.setdefault(r.drive, set()).add(r.path)
+
         catalog_count = await _build_file_catalog(db)
-        sp_count = await _index_sharepoint(db)
+        sp_count = await _index_sharepoint(db, archived_item_ids, archived_paths_by_drive)
         comment_count = await _index_doc_comments(db)
         msg = (
             f"{catalog_count} files cataloged, {sp_count} SharePoint chunks indexed, "
