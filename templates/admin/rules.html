@@ -36,22 +36,31 @@
       </span>
     </p>
   </div>
-  <div class="flex gap-2 items-center">
-    <span id="enrich-count" class="text-xs text-gray-400">{{ enriched_files }}/{{ total_files }} enriched</span>
-    <form method="post" action="/ask/admin/enrich-now">
-      <input type="hidden" name="force" value="0"/>
-      <button type="submit" class="text-sm border border-purple-300 text-purple-700 hover:bg-purple-50 px-4 py-2 rounded-lg">
-        Enrich metadata
-      </button>
-    </form>
-    <form method="post" action="/ask/admin/index-now">
-      <button type="submit" class="text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg">
-        Re-index knowledge
-      </button>
-    </form>
-    <a href="/ask" class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
-      Open Ask PL
-    </a>
+  <div class="flex flex-col items-end gap-2">
+    <div class="flex gap-2 items-center">
+      <span id="enrich-count" class="text-xs text-gray-400">{{ enriched_files }}/{{ total_files }} enriched</span>
+      <form method="post" action="/ask/admin/enrich-now">
+        <input type="hidden" name="force" value="0"/>
+        <button type="submit" class="text-sm border border-purple-300 text-purple-700 hover:bg-purple-50 px-4 py-2 rounded-lg">
+          Enrich metadata
+        </button>
+      </form>
+      <form method="post" action="/ask/admin/index-now">
+        <button type="submit" class="text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-lg">
+          Re-index knowledge
+        </button>
+      </form>
+      <a href="/ask" class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+        Open Ask PL
+      </a>
+    </div>
+    <div id="index-status" class="text-xs text-gray-400 text-right">
+      {% if last_indexed_at %}
+        Last indexed: {{ last_indexed_at.strftime("%Y-%m-%d %H:%M UTC") }} &middot; {{ total_chunks }} chunks
+      {% else %}
+        Never indexed
+      {% endif %}
+    </div>
   </div>
 </div>
 
@@ -181,7 +190,18 @@
       if (wasRunning && !running) {
         clearInterval(timer);
         timer = null;
-        location.reload();
+        const statusEl = document.getElementById('index-status');
+        if (statusEl && idx.last_finished_at) {
+          const dt = new Date(idx.last_finished_at);
+          const label = dt.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+          const ok = idx.last_ok;
+          const msg = idx.last_message || '';
+          statusEl.innerHTML = ok
+            ? `<span class="text-green-600">&#10003; ${label}</span> &middot; ${msg}`
+            : `<span class="text-red-600">&#10007; ${label} &mdash; ${msg}</span>`;
+        } else {
+          location.reload();
+        }
       }
       wasRunning = running;
     } catch (e) { /* network blip — keep polling */ }

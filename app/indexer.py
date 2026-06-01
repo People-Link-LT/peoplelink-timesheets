@@ -618,12 +618,16 @@ async def _run_indexing() -> dict:
             f"{comment_count} doc comments indexed"
         )
         logger.info(msg)
-        _prog.update("indexing", running=False, current_drive="")
+        _prog.update("indexing", running=False, current_drive="",
+                     last_finished_at=datetime.now(timezone.utc).isoformat(),
+                     last_message=msg, last_ok=True)
         return {"ok": True, "message": msg}
     except Exception as e:
         db.rollback()
         logger.error(f"Indexing failed: {e}")
-        _prog.update("indexing", running=False, current_drive="")
+        _prog.update("indexing", running=False, current_drive="",
+                     last_finished_at=datetime.now(timezone.utc).isoformat(),
+                     last_message=str(e), last_ok=False)
         return {"ok": False, "message": str(e)}
     finally:
         db.close()

@@ -10,11 +10,17 @@ _state: dict = {
         "drives_done": 0,
         "drives_total": 0,
         "files_done": 0,
+        "last_finished_at": None,
+        "last_message": None,
+        "last_ok": None,
     },
     "enrichment": {
         "running": False,
         "done": 0,
         "total": 0,
+        "last_finished_at": None,
+        "last_message": None,
+        "last_ok": None,
     },
 }
 
