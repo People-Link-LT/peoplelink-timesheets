@@ -325,8 +325,9 @@ async def _index_one_drive(
             ))
             file_indexed += 1
 
-        # Commit per file so progress is preserved if interrupted
+        # Commit per file and clear identity map to prevent memory accumulation
         db.commit()
+        db.expunge_all()
         indexed += file_indexed
 
     logger.info(f"[{drive_name}] Skipped {skipped_ext} unsupported + {skipped_size} oversized files")
@@ -471,6 +472,7 @@ async def _build_file_catalog(db: Session) -> int:
             sync_row.last_catalog_sync = now.replace(tzinfo=None)
 
         db.commit()
+        db.expunge_all()  # clear session identity map — prevents memory accumulation across drives
         logger.info(f"[catalog:{drive_name}] {len(changed_files)} changed, {len(deleted_ids)} deleted")
         _prog.update("indexing", drives_done=i + 1, files_done=total)
 
@@ -562,6 +564,7 @@ async def _index_sharepoint(
                     sync_row.content_delta_link = new_delta_link
                     sync_row.last_content_sync = now.replace(tzinfo=None)
                     db.commit()
+                    db.expunge_all()
 
             except Exception as e:
                 logger.error(f"[{drive_name}] Drive indexing failed: {e}")
@@ -646,8 +649,11 @@ async def _run_indexing() -> dict:
             if r.drive and r.path:
                 archived_paths_by_drive.setdefault(r.drive, set()).add(r.path)
 
+        import gc
         catalog_count = await _build_file_catalog(db)
+        gc.collect()
         sp_count = await _index_sharepoint(db, archived_item_ids, archived_paths_by_drive)
+        gc.collect()
         comment_count = await _index_doc_comments(db)
         msg = (
             f"{catalog_count} files cataloged, {sp_count} SharePoint chunks indexed, "
