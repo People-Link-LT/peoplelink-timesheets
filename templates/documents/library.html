@@ -59,6 +59,18 @@
       <div class="flex items-center gap-2 shrink-0">
         {% if user.is_admin %}
         {% set is_arch = meta.get('is_archive', false) %}
+        {% set is_no_index = meta.get('no_index', false) %}
+        {% if cat.drive %}
+        <button onclick="toggleNoIndexCat(event, '{{ cat.key }}', {{ cat.name | tojson }}, {{ (meta.get('comment','')) | tojson }}, {{ (meta.get('audience') or []) | tojson }}, this)"
+                class="no-index-cat-btn transition-colors {% if is_no_index %}text-rose-500 hover:text-rose-700{% else %}text-gray-200 hover:text-rose-400{% endif %}"
+                data-no-index="{{ 'true' if is_no_index else 'false' }}"
+                title="{{ 'Include in indexing' if is_no_index else 'Exclude from indexing (skip AI processing)' }}">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/>
+          </svg>
+        </button>
+        {% endif %}
         <button onclick="toggleArchiveCat(event, '{{ cat.key }}', {{ cat.name | tojson }}, {{ (meta.get('comment','')) | tojson }}, {{ (meta.get('audience') or []) | tojson }}, this)"
                 class="archive-cat-btn transition-colors {% if is_arch %}text-amber-400 hover:text-amber-600{% else %}text-gray-200 hover:text-amber-400{% endif %}"
                 data-archive="{{ 'true' if is_arch else 'false' }}"
@@ -249,6 +261,29 @@ async function saveMeta() {
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMeta(); });
+
+async function toggleNoIndexCat(event, key, name, comment, audience, btn) {
+  event.stopPropagation();
+  const current = btn.dataset.noIndex === 'true';
+  const newVal = !current;
+  try {
+    const resp = await fetch('/documents/api/meta', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: key, drive: '', path: '', name, comment, audience, no_index: newVal }),
+    });
+    if (!(await resp.json()).ok) throw new Error('Save failed');
+    btn.dataset.noIndex = newVal ? 'true' : 'false';
+    btn.classList.toggle('text-rose-500', newVal);
+    btn.classList.toggle('hover:text-rose-700', newVal);
+    btn.classList.toggle('text-gray-200', !newVal);
+    btn.classList.toggle('hover:text-rose-400', !newVal);
+    btn.title = newVal ? 'Include in indexing' : 'Exclude from indexing (skip AI processing)';
+    btn.closest('.flex.flex-col').classList.toggle('opacity-50', newVal);
+  } catch (err) {
+    alert('Could not update: ' + err.message);
+  }
+}
 
 async function toggleArchiveCat(event, key, name, comment, audience, btn) {
   event.stopPropagation();

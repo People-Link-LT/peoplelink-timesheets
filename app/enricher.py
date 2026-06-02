@@ -179,11 +179,41 @@ async def enrich_all(db: Session, force: bool = False) -> dict:
         logger.warning("OPENAI_API_KEY not set — skipping enrichment")
         return {"catalog": 0, "chunks": 0}
 
+    # Load no_index exclusions so we skip them entirely
+    from app.models import DocMeta as _DocMeta
+    no_index_meta = db.execute(select(_DocMeta).where(_DocMeta.no_index == True)).scalars().all()
+    no_index_drives: set[str] = set()
+    no_index_item_ids: set[str] = set()
+    no_index_paths_by_drive: dict[str, set[str]] = {}
+    for r in no_index_meta:
+        if r.item_id.startswith("cat::") or r.item_id.startswith("subcat::"):
+            try:
+                from app.indexer import _drive_for_meta_key
+                d = _drive_for_meta_key(r.item_id)
+                if d:
+                    no_index_drives.add(d)
+            except Exception:
+                pass
+        else:
+            no_index_item_ids.add(r.item_id)
+            if r.drive and r.path:
+                no_index_paths_by_drive.setdefault(r.drive, set()).add(r.path)
+
+    def _is_no_index(row: FileCatalog) -> bool:
+        if row.drive in no_index_drives:
+            return True
+        if row.item_id in no_index_item_ids:
+            return True
+        for p in no_index_paths_by_drive.get(row.drive, set()):
+            if row.folder_path == p or row.folder_path.startswith(p + "/"):
+                return True
+        return False
+
     # Load file_catalog rows that need enrichment
     stmt = select(FileCatalog)
     if not force:
         stmt = stmt.where(FileCatalog.enriched_at.is_(None))
-    catalog_rows: list[FileCatalog] = list(db.execute(stmt).scalars().all())
+    catalog_rows: list[FileCatalog] = [r for r in db.execute(stmt).scalars().all() if not _is_no_index(r)]
 
     if not catalog_rows:
         logger.info("All file_catalog rows already enriched")

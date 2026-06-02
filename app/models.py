@@ -145,6 +145,7 @@ class DocMeta(Base):
     ai_generated: Mapped[bool] = mapped_column(Boolean, default=False)
     ai_model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     is_archive: Mapped[bool] = mapped_column(Boolean, default=False)
+    no_index: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 

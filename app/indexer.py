@@ -121,11 +121,32 @@ async def _index_assignments(db: Session) -> int:
 
 
 def _is_path_archived(folder_path: str, archived_paths: set[str]) -> bool:
-    """Return True if folder_path equals or is under any archived path."""
+    """Return True if folder_path equals or is under any path in the set."""
     for ap in archived_paths:
         if folder_path == ap or folder_path.startswith(ap + "/"):
             return True
     return False
+
+
+def _drive_for_meta_key(item_id: str) -> str | None:
+    """Resolve a cat:: or subcat:: DocMeta key to the corresponding SharePoint drive name."""
+    try:
+        from app.routers.documents import _CATEGORIES
+    except Exception:
+        return None
+    if item_id.startswith("cat::"):
+        cat_name = item_id[5:]
+        cat = next((c for c in _CATEGORIES if c["name"] == cat_name), None)
+        return cat["drive"] if cat and cat.get("drive") else None
+    if item_id.startswith("subcat::"):
+        parts = item_id[8:].split("::", 1)
+        if len(parts) == 2:
+            cat_name, sub_name = parts
+            cat = next((c for c in _CATEGORIES if c["name"] == cat_name), None)
+            if cat:
+                sub = next((s for s in cat.get("subcategories", []) if s["name"] == sub_name), None)
+                return sub["drive"] if sub else None
+    return None
 
 
 async def _index_one_drive(
@@ -138,6 +159,8 @@ async def _index_one_drive(
     deleted_item_ids: list[str] | None = None,
     archived_item_ids: set[str] | None = None,
     archived_paths: set[str] | None = None,
+    no_index_item_ids: set[str] | None = None,
+    no_index_paths: set[str] | None = None,
 ) -> int:
     from app.sharepoint import list_files, resolve_token_and_drive
 
@@ -207,6 +230,21 @@ async def _index_one_drive(
             (archived_item_ids and f["id"] in archived_item_ids) or
             (archived_paths and _is_path_archived(file_folder_path, archived_paths))
         )
+
+        # Skip files excluded from indexing; remove any stale chunks for them
+        file_is_no_index = bool(
+            (no_index_item_ids and f["id"] in no_index_item_ids) or
+            (no_index_paths and _is_path_archived(file_folder_path, no_index_paths))
+        )
+        if file_is_no_index:
+            db.execute(
+                delete(KnowledgeChunk).where(
+                    KnowledgeChunk.source_type == "sharepoint",
+                    KnowledgeChunk.source_id.like(f"{f['id']}%"),
+                )
+            )
+            db.commit()
+            continue
 
         # Incremental: skip if already indexed and not modified since
         file_modified: datetime | None = None
@@ -484,6 +522,9 @@ async def _index_sharepoint(
     db: Session,
     archived_item_ids: set[str] | None = None,
     archived_paths_by_drive: dict[str, set[str]] | None = None,
+    no_index_drives: set[str] | None = None,
+    no_index_item_ids: set[str] | None = None,
+    no_index_paths_by_drive: dict[str, set[str]] | None = None,
 ) -> int:
     if not all([
         settings.sharepoint_tenant_id,
@@ -528,6 +569,12 @@ async def _index_sharepoint(
         for i, drive_name in enumerate(drives):
             logger.info(f"Indexing drive: {drive_name}")
             _prog.update("indexing", phase="content", current_drive=drive_name, drives_done=catalog_offset + i)
+
+            if no_index_drives and drive_name in no_index_drives:
+                logger.info(f"[{drive_name}] Skipped — excluded from indexing")
+                _prog.update("indexing", drives_done=catalog_offset + i + 1)
+                continue
+
             try:
                 sync_row = db.execute(
                     select(DriveSync).where(DriveSync.drive_name == drive_name)
@@ -549,6 +596,8 @@ async def _index_sharepoint(
                     changed_items=changed_files, deleted_item_ids=deleted_ids,
                     archived_item_ids=archived_item_ids,
                     archived_paths=archived_paths_by_drive.get(drive_name) if archived_paths_by_drive else None,
+                    no_index_item_ids=no_index_item_ids,
+                    no_index_paths=no_index_paths_by_drive.get(drive_name) if no_index_paths_by_drive else None,
                 )
                 logger.info(f"[{drive_name}] Indexed {count} chunks")
                 total += count
@@ -577,7 +626,7 @@ async def _index_doc_comments(db: Session) -> int:
     from app.models import DocMeta
 
     metas = db.execute(
-        select(DocMeta).where(DocMeta.comment.isnot(None))
+        select(DocMeta).where(DocMeta.comment.isnot(None)).where(DocMeta.no_index == False)
     ).scalars().all()
 
     now = datetime.now(timezone.utc)
@@ -637,22 +686,37 @@ async def _run_indexing() -> dict:
         db.execute(delete(KnowledgeChunk).where(KnowledgeChunk.source_type == "invenias"))
         db.commit()
 
-        # Load all archived DocMeta items once so indexing functions can check
+        # Load archive + no_index DocMeta state once before indexing begins
         from app.models import DocMeta as _DocMeta
-        archived_rows = db.execute(
-            select(_DocMeta).where(_DocMeta.is_archive == True)
-        ).scalars().all()
-        archived_item_ids: set[str] = {r.item_id for r in archived_rows}
-        # Group archived paths by drive for folder-level matching
+        all_meta_rows = db.execute(select(_DocMeta)).scalars().all()
+
+        archived_item_ids: set[str] = set()
         archived_paths_by_drive: dict[str, set[str]] = {}
-        for r in archived_rows:
-            if r.drive and r.path:
-                archived_paths_by_drive.setdefault(r.drive, set()).add(r.path)
+        no_index_drives: set[str] = set()
+        no_index_item_ids: set[str] = set()
+        no_index_paths_by_drive: dict[str, set[str]] = {}
+
+        for r in all_meta_rows:
+            if r.is_archive:
+                archived_item_ids.add(r.item_id)
+                if r.drive and r.path:
+                    archived_paths_by_drive.setdefault(r.drive, set()).add(r.path)
+            if r.no_index:
+                drive_name = _drive_for_meta_key(r.item_id)
+                if drive_name:
+                    no_index_drives.add(drive_name)
+                else:
+                    no_index_item_ids.add(r.item_id)
+                    if r.drive and r.path:
+                        no_index_paths_by_drive.setdefault(r.drive, set()).add(r.path)
 
         import gc
         catalog_count = await _build_file_catalog(db)
         gc.collect()
-        sp_count = await _index_sharepoint(db, archived_item_ids, archived_paths_by_drive)
+        sp_count = await _index_sharepoint(
+            db, archived_item_ids, archived_paths_by_drive,
+            no_index_drives, no_index_item_ids, no_index_paths_by_drive,
+        )
         gc.collect()
         comment_count = await _index_doc_comments(db)
         msg = (

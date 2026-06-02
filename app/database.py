@@ -43,6 +43,7 @@ def init_db():
             ("ai_generated", "BOOLEAN NOT NULL DEFAULT FALSE"),
             ("ai_model", "VARCHAR(80)"),
             ("is_archive", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("no_index", "BOOLEAN NOT NULL DEFAULT FALSE"),
         ]:
             try:
                 conn.execute(text(f'ALTER TABLE doc_meta ADD COLUMN {col} {definition}'))

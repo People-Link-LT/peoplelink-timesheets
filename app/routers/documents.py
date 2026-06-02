@@ -237,6 +237,7 @@ async def library_home(
             "comment":    r.comment or "",
             "audience":   _json.loads(r.audience) if r.audience else [],
             "is_archive": r.is_archive,
+            "no_index":   r.no_index,
         }
         for r in rows
     }
@@ -273,6 +274,7 @@ async def browse(
                     "comment":    r.comment or "",
                     "audience":   _json.loads(r.audience) if r.audience else [],
                     "is_archive": r.is_archive,
+                    "no_index":   r.no_index,
                 }
                 for r in rows
             }
@@ -331,6 +333,7 @@ async def browse(
                 "ai_generated": r.ai_generated,
                 "ai_model":   r.ai_model or "",
                 "is_archive": r.is_archive,
+                "no_index":   r.no_index,
             }
             for r in rows
         }
@@ -390,6 +393,7 @@ async def save_meta(
     ai_generated = bool(body.get("ai_generated", False))
     ai_model = (body.get("ai_model") or "").strip() or None
     is_archive = bool(body.get("is_archive", False))
+    no_index = bool(body.get("no_index", False))
 
     existing = db.execute(select(DocMeta).where(DocMeta.item_id == item_id)).scalar_one_or_none()
     now = datetime.now(timezone.utc)
@@ -400,6 +404,7 @@ async def save_meta(
         existing.ai_generated = ai_generated
         existing.ai_model = ai_model
         existing.is_archive = is_archive
+        existing.no_index = no_index
         existing.updated_by = user.full_name
         existing.updated_at = now
     else:
@@ -413,6 +418,7 @@ async def save_meta(
             ai_generated=ai_generated,
             ai_model=ai_model,
             is_archive=is_archive,
+            no_index=no_index,
             updated_by=user.full_name,
             updated_at=now,
         ))
