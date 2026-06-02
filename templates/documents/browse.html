@@ -408,18 +408,16 @@
      onclick="closeMeta()"></div>
 
 <div id="meta-modal"
-     class="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl
-            translate-y-full transition-transform duration-250 ease-out
-            max-w-lg mx-auto sm:inset-auto sm:top-1/2 sm:left-1/2
-            sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:shadow-2xl hidden"
-     style="max-width:480px">
-  <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+     class="fixed z-50 bg-white rounded-2xl shadow-2xl hidden"
+     style="width:calc(100% - 2rem); max-width:480px">
+  <div id="meta-drag-handle"
+       class="flex items-center justify-between px-5 py-4 border-b border-gray-100 cursor-move select-none">
     <div>
       <p class="font-semibold text-gray-900 text-sm">Edit annotation</p>
       <p id="meta-item-name" class="text-xs text-gray-400 truncate mt-0.5 max-w-xs"></p>
     </div>
     <button onclick="closeMeta()"
-            class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 text-lg leading-none">
+            class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 text-lg leading-none cursor-pointer">
       ✕
     </button>
   </div>
@@ -695,12 +693,17 @@ function openMeta(event, rowOrKey, nameOrUnused, commentOrUnused, audienceOrUnus
   const modal    = document.getElementById('meta-modal');
   const backdrop = document.getElementById('meta-backdrop');
   modal.classList.remove('hidden');
-  modal.style.transform = '';
+  // Reset to centered position each open
+  modal.style.top        = '50%';
+  modal.style.left       = '50%';
+  modal.style.transform  = 'translate(-50%, -50%) scale(0.96)';
+  modal.style.opacity    = '0';
+  modal.style.transition = 'opacity 150ms ease, transform 150ms ease';
   backdrop.classList.remove('hidden');
-  requestAnimationFrame(() => {
-    modal.style.transform = 'translateY(0)';
-    modal.classList.remove('translate-y-full');
-  });
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    modal.style.transform = 'translate(-50%, -50%) scale(1)';
+    modal.style.opacity   = '1';
+  }));
   document.getElementById('meta-comment').focus();
 }
 
@@ -792,9 +795,13 @@ function _refreshRowBadges(row, docType, company, docNumber, docYear, docMonth) 
 
 function closeMeta() {
   const modal = document.getElementById('meta-modal');
-  modal.style.transform = 'translateY(100%)';
+  modal.style.transition = 'opacity 150ms ease';
+  modal.style.opacity = '0';
   document.getElementById('meta-backdrop').classList.add('hidden');
-  setTimeout(() => modal.classList.add('hidden'), 260);
+  setTimeout(() => {
+    modal.classList.add('hidden');
+    modal.style.cssText = 'width:calc(100% - 2rem); max-width:480px';
+  }, 160);
   _metaRow = null;
   _metaSubKey = null;
   _metaSubDrive = null;
@@ -1033,6 +1040,52 @@ document.querySelectorAll('#file-table tbody tr').forEach(row => {
     }
   });
 });
+
+// ── draggable meta modal ───────────────────────────────────────────────────
+(function () {
+  const modal  = document.getElementById('meta-modal');
+  const handle = document.getElementById('meta-drag-handle');
+  let dragging = false, startMouseX, startMouseY, startLeft, startTop;
+
+  function beginDrag(clientX, clientY) {
+    const rect = modal.getBoundingClientRect();
+    startLeft  = rect.left;
+    startTop   = rect.top;
+    startMouseX = clientX;
+    startMouseY = clientY;
+    // Switch from % + translate centering to raw px so drag math works
+    modal.style.transition = 'none';
+    modal.style.transform  = 'none';
+    modal.style.left = startLeft + 'px';
+    modal.style.top  = startTop  + 'px';
+    dragging = true;
+  }
+
+  function moveDrag(clientX, clientY) {
+    if (!dragging) return;
+    modal.style.left = (startLeft + clientX - startMouseX) + 'px';
+    modal.style.top  = (startTop  + clientY - startMouseY) + 'px';
+  }
+
+  handle.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    beginDrag(e.clientX, e.clientY);
+  });
+  document.addEventListener('mousemove', e => moveDrag(e.clientX, e.clientY));
+  document.addEventListener('mouseup',   () => { dragging = false; });
+
+  handle.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    beginDrag(t.clientX, t.clientY);
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    const t = e.touches[0];
+    moveDrag(t.clientX, t.clientY);
+  }, { passive: true });
+  document.addEventListener('touchend', () => { dragging = false; });
+})();
 </script>
 
 {% endblock %}
