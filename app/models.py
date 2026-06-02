@@ -161,7 +161,7 @@ class MetaCriteria(Base):
     color_class: Mapped[str] = mapped_column(String(200), default="border-gray-300 text-gray-600 bg-gray-50")
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), server_default=func.now())
 
 
 class FileCatalog(Base):

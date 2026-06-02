@@ -66,13 +66,13 @@ def _seed_meta_criteria(conn) -> None:
     import uuid as _uuid_mod
     for i, (value, label, color) in enumerate(doc_types):
         conn.execute(text(
-            "INSERT INTO meta_criteria (id, criteria_type, value, label, color_class, sort_order, is_builtin) "
-            "VALUES (:id, 'doc_type', :value, :label, :color, :sort, true)"
+            "INSERT INTO meta_criteria (id, criteria_type, value, label, color_class, sort_order, is_builtin, created_at) "
+            "VALUES (:id, 'doc_type', :value, :label, :color, :sort, true, NOW())"
         ), {"id": str(_uuid_mod.uuid4()), "value": value, "label": label, "color": color, "sort": i})
     for i, (value, label, color) in enumerate(audiences):
         conn.execute(text(
-            "INSERT INTO meta_criteria (id, criteria_type, value, label, color_class, sort_order, is_builtin) "
-            "VALUES (:id, 'audience', :value, :label, :color, :sort, true)"
+            "INSERT INTO meta_criteria (id, criteria_type, value, label, color_class, sort_order, is_builtin, created_at) "
+            "VALUES (:id, 'audience', :value, :label, :color, :sort, true, NOW())"
         ), {"id": str(_uuid_mod.uuid4()), "value": value, "label": label, "color": color, "sort": i})
     conn.commit()
 
@@ -85,7 +85,10 @@ def init_db():
         conn.commit()
     Base.metadata.create_all(bind=engine)
     with engine.connect() as conn:
-        _seed_meta_criteria(conn)
+        try:
+            _seed_meta_criteria(conn)
+        except Exception:
+            conn.rollback()
     with engine.connect() as conn:
         # Safe column migrations
         for col, definition in [
@@ -181,6 +184,12 @@ def init_db():
         # Widen file_catalog.ext to VARCHAR(50) (filenames with dots but no real extension)
         try:
             conn.execute(text("ALTER TABLE file_catalog ALTER COLUMN ext TYPE VARCHAR(50)"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        # Ensure meta_criteria.created_at has a server-side DEFAULT (missing from initial create)
+        try:
+            conn.execute(text("ALTER TABLE meta_criteria ALTER COLUMN created_at SET DEFAULT now()"))
             conn.commit()
         except Exception:
             conn.rollback()
