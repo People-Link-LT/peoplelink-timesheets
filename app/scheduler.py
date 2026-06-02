@@ -6,8 +6,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 VILNIUS = ZoneInfo("Europe/Vilnius")
 from sqlalchemy.orm import Session
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 from app.models import Assignment
+from sqlalchemy import text
 from app.invenias import fetch_active_assignments
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,15 @@ def sync_assignments():
         db.close()
 
 
+def run_vacuum_sync():
+    try:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            conn.execute(text("VACUUM ANALYZE"))
+        logger.info("VACUUM ANALYZE complete")
+    except Exception as e:
+        logger.error(f"VACUUM ANALYZE failed: {e}")
+
+
 def start_scheduler():
     scheduler.add_job(sync_assignments, "cron", hour=3, minute=0, id="invenias_sync", replace_existing=True)
     from app.backup import run_backup, check_backup_health
@@ -62,5 +72,6 @@ def start_scheduler():
     from app.indexer import run_indexing_sync
     scheduler.add_job(run_indexing_sync, "cron", hour=7, minute=0, id="ask_index_am", replace_existing=True, timezone=VILNIUS)
     scheduler.add_job(run_indexing_sync, "cron", hour=13, minute=0, id="ask_index_pm", replace_existing=True, timezone=VILNIUS)
+    scheduler.add_job(run_vacuum_sync, "cron", day_of_week="sun", hour=3, minute=0, id="vacuum_db", replace_existing=True, timezone=VILNIUS)
     scheduler.start()
-    logger.info("Scheduler started (sync 03:00, backup 02:30, index 07:00+13:00 Vilnius, health check 17:00).")
+    logger.info("Scheduler started (sync 03:00, backup 02:30, index 07:00+13:00 Vilnius, health check 17:00, vacuum Sun 03:00).")

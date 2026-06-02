@@ -1,11 +1,14 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from app.database import init_db, SessionLocal
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from app.database import init_db, get_db, SessionLocal
 from app.invenias import fetch_active_assignments
 from app.models import Assignment, KnowledgeChunk
 from app.routers import auth, timesheet, portfolio, dashboard, admin, profile, setup, documents, ask
@@ -16,7 +19,18 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    max_attempts = 10
+    for attempt in range(max_attempts):
+        try:
+            init_db()
+            break
+        except Exception as e:
+            if attempt == max_attempts - 1:
+                logger.critical(f"DB unreachable after {max_attempts} attempts — aborting: {e}")
+                raise
+            wait = min(2 ** attempt, 30)
+            logger.warning(f"init_db attempt {attempt + 1}/{max_attempts} failed: {e}. Retrying in {wait}s")
+            await asyncio.sleep(wait)
     try:
         items = await fetch_active_assignments()
         db = SessionLocal()
@@ -80,8 +94,12 @@ async def security_headers(request: Request, call_next) -> Response:
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=503)
 
 
 @app.get("/")
