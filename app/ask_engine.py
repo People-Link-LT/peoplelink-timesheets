@@ -130,6 +130,11 @@ def search_files(db: Session, query: str, doc_type: str | None = None, limit: in
     return list(db.execute(stmt).scalars().all())
 
 
+def _md_url(url: str) -> str:
+    """Percent-encode parentheses so they don't break markdown [text](url) syntax."""
+    return url.replace("(", "%28").replace(")", "%29")
+
+
 def _format_file_results(rows: list[FileCatalog], limit: int = MAX_FILE_RESULTS) -> str:
     if not rows:
         return "No matching files found in the catalog."
@@ -149,7 +154,7 @@ def _format_file_results(rows: list[FileCatalog], limit: int = MAX_FILE_RESULTS)
             date = r.modified.date().isoformat() if r.modified else "?"
             nr = f" Nr.{r.doc_number}" if r.doc_number else ""
             if r.web_url:
-                lines.append(f"  - [{r.name}]({r.web_url}) | {date}{nr}")
+                lines.append(f"  - [{r.name}]({_md_url(r.web_url)}) | {date}{nr}")
             else:
                 lines.append(f"  - {r.name} | {date}{nr}")
 
@@ -278,8 +283,7 @@ async def ask_stream(
                         )
                         for r in rows:
                             if r.web_url and r.item_id not in seen_sources:
-                                display = f"{r.folder_path}/{r.name}".lstrip("/") if r.folder_path else r.name
-                                seen_sources[r.item_id] = {"name": display, "url": r.web_url}
+                                seen_sources[r.item_id] = {"name": r.name, "url": r.web_url}
                         tool_results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
