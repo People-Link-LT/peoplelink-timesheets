@@ -22,6 +22,15 @@
       <div id="enr-bar" class="bg-purple-600 h-1.5 rounded-full transition-all duration-500" style="width:0%"></div>
     </div>
   </div>
+  <div id="auto-desc-bar-wrap" class="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3" style="display:none">
+    <div class="flex justify-between text-xs text-indigo-700 mb-1.5">
+      <span>Generating descriptions</span>
+      <span id="auto-desc-counter">0/0</span>
+    </div>
+    <div class="w-full bg-indigo-100 rounded-full h-1.5">
+      <div id="auto-desc-bar" class="bg-indigo-500 h-1.5 rounded-full transition-all duration-500" style="width:0%"></div>
+    </div>
+  </div>
 </div>
 <div class="mb-6 flex items-center justify-between">
   <div>
@@ -50,6 +59,15 @@
           Re-index knowledge
         </button>
       </form>
+      <button onclick="runAutoDescribe(false)"
+              class="text-sm border border-indigo-300 text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-lg">
+        ✦ Auto-describe
+      </button>
+      <button onclick="runAutoDescribe(true)"
+              class="text-sm border border-gray-300 text-gray-500 hover:bg-gray-50 px-3 py-2 rounded-lg"
+              title="Re-generate ALL descriptions, overwriting existing ones">
+        ↺ Force
+      </button>
       <a href="/ask" class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
         Open Ask PL
       </a>
@@ -163,9 +181,6 @@
 
       const idx = d.indexing;
       const enr = d.enrichment;
-      const running = idx.running || enr.running;
-
-      document.getElementById('progress-section').style.display = running ? '' : 'none';
 
       const idxWrap = document.getElementById('indexing-bar-wrap');
       idxWrap.style.display = idx.running ? '' : 'none';
@@ -186,6 +201,20 @@
         document.getElementById('enr-counter').textContent = enr.done + '/' + enr.total + ' files';
         document.getElementById('enr-bar').style.width = pct(enr.done, enr.total) + '%';
       }
+
+      const ad = d.auto_describe || {};
+      const adWrap = document.getElementById('auto-desc-bar-wrap');
+      adWrap.style.display = ad.running ? '' : 'none';
+      if (ad.running) {
+        document.getElementById('auto-desc-counter').textContent = ad.done + '/' + ad.total;
+        document.getElementById('auto-desc-bar').style.width = pct(ad.done, ad.total) + '%';
+      }
+      if (!ad.running && ad.last_message && adWrap.style.display !== 'none') {
+        document.getElementById('auto-desc-counter').textContent = ad.last_message;
+      }
+
+      const running = idx.running || enr.running || ad.running;
+      document.getElementById('progress-section').style.display = running ? '' : 'none';
 
       if (wasRunning && !running) {
         clearInterval(timer);
@@ -218,5 +247,25 @@
   document.querySelectorAll('form[action="/ask/admin/index-now"], form[action="/ask/admin/enrich-now"]')
     .forEach(f => f.addEventListener('submit', () => setTimeout(startPolling, 800)));
 })();
+
+async function runAutoDescribe(force) {
+  const label = force
+    ? 'Re-generate ALL descriptions (overwrites existing ones)?'
+    : 'Generate descriptions for all items without one?';
+  if (!confirm(label)) return;
+  try {
+    const resp = await fetch('/documents/api/auto-describe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force }),
+    });
+    const data = await resp.json();
+    if (!data.ok) { alert(data.message || 'Could not start'); return; }
+    document.getElementById('progress-section').style.display = '';
+    document.getElementById('auto-desc-bar-wrap').style.display = '';
+  } catch (err) {
+    alert('Request failed: ' + err.message);
+  }
+}
 </script>
 {% endblock %}

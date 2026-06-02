@@ -22,6 +22,14 @@ _state: dict = {
         "last_message": None,
         "last_ok": None,
     },
+    "auto_describe": {
+        "running": False,
+        "done": 0,
+        "total": 0,
+        "last_finished_at": None,
+        "last_message": None,
+        "last_ok": None,
+    },
 }
 
 

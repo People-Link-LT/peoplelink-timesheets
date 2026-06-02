@@ -4,7 +4,7 @@ import json as _json
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -457,8 +457,7 @@ async def generate_description(
 async def _ai_generate_description(name: str, drive: str, sample: str) -> tuple[str, str]:
     prompt = (
         f"You are a document librarian for a Lithuanian executive search firm (People Link).\n"
-        f"Write a concise 2-3 sentence description in the same language as the document name "
-        f"(Lithuanian if the name is Lithuanian, English if English).\n"
+        f"Write a concise 2-3 sentence description in English.\n"
         f"Describe: what this document/library contains, who it is for, and when to use it.\n"
         f"Be specific and practical. Do not start with 'This document'.\n\n"
         f"Library: {drive}\nDocument/folder name: {name}\n\nContent sample:\n{sample}"
@@ -491,6 +490,35 @@ async def _ai_generate_description(name: str, drive: str, sample: str) -> tuple[
             logger.error(f"OpenAI description generation failed: {e}")
 
     return "", "none"
+
+
+# ---------------------------------------------------------------------------
+# Admin — bulk auto-describe
+# ---------------------------------------------------------------------------
+
+@router.post("/api/auto-describe", response_class=JSONResponse)
+async def start_auto_describe(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not user.is_admin:
+        return JSONResponse({"ok": False, "error": "Admin only"}, status_code=403)
+    from app import progress as _prog
+    if _prog.snapshot().get("auto_describe", {}).get("running"):
+        return JSONResponse({"ok": False, "message": "Already running"})
+    body = await request.json()
+    force = bool(body.get("force", False))
+    from app.auto_describer import run_auto_describe_sync
+    background_tasks.add_task(run_auto_describe_sync, force)
+    return JSONResponse({"ok": True})
+
+
+@router.get("/api/auto-describe/status", response_class=JSONResponse)
+async def auto_describe_status():
+    from app import progress as _prog
+    return JSONResponse(_prog.snapshot().get("auto_describe", {}))
 
 
 # ---------------------------------------------------------------------------
