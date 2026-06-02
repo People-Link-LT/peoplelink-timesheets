@@ -430,14 +430,8 @@
               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800
                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
         <option value="">— not set —</option>
-        {% for dt in ['invoice','proposal','client_contract','supplier_contract','nda',
-                      'employment_contract','freelance_contract','loan_contract',
-                      'power_of_attorney','order','request','policy','instruction',
-                      'announcement','training','marketing','results','template',
-                      'gdpr','safety','health_insurance','health_check','works_council',
-                      'it_assets','vehicle','office','consulting','assessment',
-                      'survey','client_growth','debt','other'] %}
-        <option value="{{ dt }}">{{ dt | replace('_',' ') }}</option>
+        {% for dt in doc_types %}
+        <option value="{{ dt.value }}">{{ dt.label }}</option>
         {% endfor %}
       </select>
     </div>
@@ -505,18 +499,12 @@
         Audience
       </label>
       <div class="flex flex-wrap gap-2">
-        {% for label, colors in [
-          ('Managers',    'border-blue-300 text-blue-700 bg-blue-50 data-sel:bg-blue-100 data-sel:border-blue-500'),
-          ('Everybody',   'border-green-300 text-green-700 bg-green-50 data-sel:bg-green-100 data-sel:border-green-500'),
-          ('Admin',       'border-amber-300 text-amber-700 bg-amber-50 data-sel:bg-amber-100 data-sel:border-amber-500'),
-          ('Freelancers', 'border-purple-300 text-purple-700 bg-purple-50 data-sel:bg-purple-100 data-sel:border-purple-500')
-        ] %}
+        {% for a in audience_labels %}
         <button type="button"
-                data-audience="{{ label }}"
+                data-audience="{{ a.value }}"
                 onclick="toggleAudience(this)"
-                class="audience-btn border rounded-full px-3 py-1 text-xs font-medium transition-all
-                       {{ colors }}">
-          {{ label }}
+                class="audience-btn border rounded-full px-3 py-1 text-xs font-medium transition-all {{ a.color_class }}">
+          {{ a.label }}
         </button>
         {% endfor %}
       </div>

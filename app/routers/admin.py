@@ -7,7 +7,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_admin, hash_password
-from app.models import User, Team
+from app.models import User, Team, MetaCriteria
+from sqlalchemy import select
 from app.scheduler import sync_assignments
 
 router = APIRouter(prefix="/admin")
@@ -131,6 +132,82 @@ def manual_backup(request: Request, db: Session = Depends(get_db), admin: User =
         "backup_ok": result["ok"],
         "backup_messages": result["messages"],
     })
+
+
+@router.get("/metadata", response_class=HTMLResponse)
+def admin_metadata(request: Request, db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    doc_types = db.execute(
+        select(MetaCriteria)
+        .where(MetaCriteria.criteria_type == "doc_type")
+        .order_by(MetaCriteria.sort_order, MetaCriteria.label)
+    ).scalars().all()
+    audiences = db.execute(
+        select(MetaCriteria)
+        .where(MetaCriteria.criteria_type == "audience")
+        .order_by(MetaCriteria.sort_order, MetaCriteria.label)
+    ).scalars().all()
+    return templates.TemplateResponse(request, "admin/metadata.html", {
+        "user": admin,
+        "doc_types": doc_types,
+        "audiences": audiences,
+    })
+
+
+@router.post("/metadata/create")
+def create_meta_criteria(
+    criteria_type: str = Form(...),
+    value: str = Form(...),
+    label: str = Form(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    existing = db.execute(
+        select(MetaCriteria)
+        .where(MetaCriteria.criteria_type == criteria_type)
+        .where(MetaCriteria.value == value.strip())
+    ).scalar_one_or_none()
+    if not existing:
+        max_order = db.execute(
+            select(MetaCriteria.sort_order)
+            .where(MetaCriteria.criteria_type == criteria_type)
+            .order_by(MetaCriteria.sort_order.desc())
+        ).scalar() or 0
+        db.add(MetaCriteria(
+            criteria_type=criteria_type,
+            value=value.strip().lower().replace(" ", "_"),
+            label=label.strip() or value.strip(),
+            sort_order=max_order + 1,
+            is_builtin=False,
+        ))
+        db.commit()
+    return RedirectResponse("/admin/metadata", status_code=302)
+
+
+@router.post("/metadata/{item_id}/update")
+def update_meta_criteria(
+    item_id: str,
+    label: str = Form(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    row = db.get(MetaCriteria, item_id)
+    if row:
+        row.label = label.strip()
+        db.commit()
+    return RedirectResponse("/admin/metadata", status_code=302)
+
+
+@router.post("/metadata/{item_id}/delete")
+def delete_meta_criteria(
+    item_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    row = db.get(MetaCriteria, item_id)
+    if row and not row.is_builtin:
+        db.delete(row)
+        db.commit()
+    return RedirectResponse("/admin/metadata", status_code=302)
 
 
 @router.get("/backup/download")

@@ -12,11 +12,21 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_admin, get_current_user
 from app.config import settings
 from app.database import get_db
-from app.models import Assignment, DocMeta, KnowledgeChunk, TimesheetEntry, User, Week
+from app.models import Assignment, DocMeta, FileCatalog, KnowledgeChunk, MetaCriteria, TimesheetEntry, User, Week
 from app.templates import templates
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents")
+
+
+def _load_criteria(db: Session) -> tuple[list, list]:
+    rows = db.execute(
+        select(MetaCriteria).order_by(MetaCriteria.criteria_type, MetaCriteria.sort_order, MetaCriteria.label)
+    ).scalars().all()
+    return (
+        [r for r in rows if r.criteria_type == "doc_type"],
+        [r for r in rows if r.criteria_type == "audience"],
+    )
 
 
 def _sp_configured() -> bool:
@@ -246,11 +256,13 @@ async def library_home(
         {**cat, "browse_url": _category_browse_url(cat)}
         for cat in _CATEGORIES
     ]
+    _, audience_labels = _load_criteria(db)
 
     return templates.TemplateResponse(request, "documents/library.html", {
         "user": user,
         "categories": categories,
         "metas": metas,
+        "audience_labels": audience_labels,
     })
 
 
@@ -288,6 +300,7 @@ async def browse(
                 }
                 for sub in cat["subcategories"]
             ]
+            doc_types, audience_labels = _load_criteria(db)
             return templates.TemplateResponse(request, "documents/browse.html", {
                 "user": user,
                 "subcategories": subcategories,
@@ -300,6 +313,8 @@ async def browse(
                 "breadcrumb": [],
                 "metas": metas,
                 "catalog": {},
+                "doc_types": doc_types,
+                "audience_labels": audience_labels,
             })
 
     # File list mode
@@ -337,7 +352,6 @@ async def browse(
             }
             for r in rows
         }
-        from app.models import FileCatalog
         cat_rows = db.execute(
             select(FileCatalog).where(FileCatalog.item_id.in_(item_ids))
         ).scalars().all()
@@ -369,6 +383,7 @@ async def browse(
             for r in cat_rows
         }
 
+    doc_types, audience_labels = _load_criteria(db)
     return templates.TemplateResponse(request, "documents/browse.html", {
         "user": user,
         "files": files,
@@ -381,6 +396,8 @@ async def browse(
         "subcategories": [],
         "parent_category": None,
         "current_category": "",
+        "doc_types": doc_types,
+        "audience_labels": audience_labels,
     })
 
 

@@ -73,8 +73,8 @@ _VALID_DOC_TYPES = (
     "consulting, assessment, survey, client_growth, debt, other"
 )
 
-# Used when document content is available — extracts full metadata + summary
-_SYSTEM_WITH_CONTENT = f"""\
+def _build_system_prompts(valid_types: str) -> tuple[str, str]:
+    with_content = f"""\
 You are a document classifier for People Link, a Lithuanian recruitment and HR consulting company.
 You are given the SharePoint location AND the full text of a document.
 Use the document content as the primary source of truth; use the location as supporting context.
@@ -91,7 +91,7 @@ Return ONLY valid JSON — no extra text, no markdown fences:
   "applies_to": "<all_employees | managers | freelancers | clients | admin | null>"
 }}
 
-Valid doc_type values: {_VALID_DOC_TYPES}
+Valid doc_type values: {valid_types}
 
 {_LOCATION_HINTS}
 
@@ -101,9 +101,7 @@ For company: read the document header — the client/counterparty company name i
 For summary: 1-2 sentences describing what this document is and what it covers.
 For applies_to: who this document is relevant to inside People Link.
 """
-
-# Used when no content is available (binary/unsupported files) — location only
-_SYSTEM_NO_CONTENT = f"""\
+    no_content = f"""\
 You are a document classifier for People Link, a Lithuanian recruitment and HR consulting company.
 The document text is not available — classify from the SharePoint location alone.
 
@@ -116,13 +114,14 @@ Return ONLY valid JSON — no extra text, no markdown fences:
   "doc_month": <month 1-12 as integer, or null>
 }}
 
-Valid doc_type values: {_VALID_DOC_TYPES}
+Valid doc_type values: {valid_types}
 
 {_LOCATION_HINTS}
 
 For doc_number: extract from filename patterns like "Nr. 00678", "Nr.45", "S Nr.00678".
 For dates: extract from filename if present — "2025-03", "2025 03", year only, etc.
 """
+    return with_content, no_content
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +174,14 @@ async def enrich_all(db: Session, force: bool = False) -> dict:
     only the SharePoint location is used.
     Returns {"catalog": N, "chunks": M}.
     """
+    # Load doc types from DB; fall back to hardcoded list if the table is empty
+    from app.models import MetaCriteria as _MetaCriteria
+    criteria_rows = db.execute(
+        select(_MetaCriteria).where(_MetaCriteria.criteria_type == "doc_type")
+    ).scalars().all()
+    valid_types = ", ".join(r.value for r in criteria_rows) if criteria_rows else _VALID_DOC_TYPES
+    _SYSTEM_WITH_CONTENT, _SYSTEM_NO_CONTENT = _build_system_prompts(valid_types)
+
     if not settings.openai_api_key:
         logger.warning("OPENAI_API_KEY not set — skipping enrichment")
         return {"catalog": 0, "chunks": 0}

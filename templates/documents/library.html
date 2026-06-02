@@ -136,14 +136,10 @@
     <div>
       <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Audience</label>
       <div class="flex flex-wrap gap-2">
-        <button type="button" data-audience="Managers"    onclick="toggleAudience(this)"
-                class="audience-btn border border-blue-300   text-blue-700   bg-blue-50   rounded-full px-3 py-1 text-xs font-medium transition-all opacity-60">Managers</button>
-        <button type="button" data-audience="Everybody"   onclick="toggleAudience(this)"
-                class="audience-btn border border-green-300  text-green-700  bg-green-50  rounded-full px-3 py-1 text-xs font-medium transition-all opacity-60">Everybody</button>
-        <button type="button" data-audience="Admin"       onclick="toggleAudience(this)"
-                class="audience-btn border border-amber-300  text-amber-700  bg-amber-50  rounded-full px-3 py-1 text-xs font-medium transition-all opacity-60">Admin</button>
-        <button type="button" data-audience="Freelancers" onclick="toggleAudience(this)"
-                class="audience-btn border border-purple-300 text-purple-700 bg-purple-50 rounded-full px-3 py-1 text-xs font-medium transition-all opacity-60">Freelancers</button>
+        {% for a in audience_labels %}
+        <button type="button" data-audience="{{ a.value }}" onclick="toggleAudience(this)"
+                class="audience-btn border rounded-full px-3 py-1 text-xs font-medium transition-all opacity-60 {{ a.color_class }}">{{ a.label }}</button>
+        {% endfor %}
       </div>
     </div>
   </div>

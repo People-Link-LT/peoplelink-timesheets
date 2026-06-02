@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Metadata Criteria — Admin{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-xl font-semibold text-gray-900">Metadata Criteria</h1>
+    <p class="text-sm text-gray-500 mt-0.5">Manage document types and audience labels used across the Document Library.</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="/admin/users" class="text-sm border border-gray-300 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-lg">Users</a>
+    <a href="/admin/teams" class="text-sm border border-gray-300 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-lg">Teams</a>
+    <a href="/ask/admin/rules" class="text-sm border border-gray-300 text-gray-600 hover:bg-gray-50 px-4 py-2 rounded-lg">Ask PL Rules</a>
+  </div>
+</div>
+
+{# ── Document Types ── #}
+<div class="bg-white border border-gray-200 rounded-xl mb-6">
+  <div class="px-5 py-4 border-b border-gray-100">
+    <h2 class="text-sm font-semibold text-gray-900">Document Types</h2>
+    <p class="text-xs text-gray-500 mt-0.5">Used in AI enrichment and the file metadata editor. Built-in types cannot be deleted.</p>
+  </div>
+
+  {% if doc_types %}
+  <div class="divide-y divide-gray-100">
+    {% for dt in doc_types %}
+    <div class="flex items-center gap-3 px-5 py-3">
+      <span class="inline-flex items-center border rounded-full px-2.5 py-0.5 text-xs font-medium {{ dt.color_class }}">{{ dt.label }}</span>
+      <span class="text-xs text-gray-400 font-mono">{{ dt.value }}</span>
+      {% if dt.is_builtin %}
+      <span class="text-xs bg-gray-100 text-gray-400 rounded-full px-2 py-0.5 ml-auto shrink-0">built-in</span>
+      {% else %}
+      <div class="flex gap-2 ml-auto shrink-0">
+        <form method="post" action="/admin/metadata/{{ dt.id }}/update" class="flex gap-1.5 items-center">
+          <input type="text" name="label" value="{{ dt.label }}" required
+                 class="border border-gray-200 rounded-lg px-2.5 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 w-40"/>
+          <button type="submit" class="text-xs border border-blue-300 text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg">Save</button>
+        </form>
+        <form method="post" action="/admin/metadata/{{ dt.id }}/delete" onsubmit="return confirm('Delete {{ dt.label }}?')">
+          <button type="submit" class="text-xs border border-red-200 text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="px-5 py-8 text-center">
+    <p class="text-sm text-gray-500">No document types yet.</p>
+  </div>
+  {% endif %}
+
+  <div class="px-5 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl">
+    <form method="post" action="/admin/metadata/create" class="flex gap-2 items-end">
+      <input type="hidden" name="criteria_type" value="doc_type"/>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Label</label>
+        <input type="text" name="label" required placeholder="e.g. Partnership agreement"
+               class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"/>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Value (machine key)</label>
+        <input type="text" name="value" required placeholder="e.g. partnership_agreement"
+               class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
+               id="dt-value-input"/>
+      </div>
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">
+        Add type
+      </button>
+    </form>
+  </div>
+</div>
+
+{# ── Audience Labels ── #}
+<div class="bg-white border border-gray-200 rounded-xl mb-6">
+  <div class="px-5 py-4 border-b border-gray-100">
+    <h2 class="text-sm font-semibold text-gray-900">Audience Labels</h2>
+    <p class="text-xs text-gray-500 mt-0.5">Used to tag documents by intended audience. Built-in labels cannot be deleted.</p>
+  </div>
+
+  {% if audiences %}
+  <div class="divide-y divide-gray-100">
+    {% for a in audiences %}
+    <div class="flex items-center gap-3 px-5 py-3">
+      <span class="inline-flex items-center border rounded-full px-2.5 py-0.5 text-xs font-medium {{ a.color_class }}">{{ a.label }}</span>
+      <span class="text-xs text-gray-400 font-mono">{{ a.value }}</span>
+      {% if a.is_builtin %}
+      <span class="text-xs bg-gray-100 text-gray-400 rounded-full px-2 py-0.5 ml-auto shrink-0">built-in</span>
+      {% else %}
+      <div class="flex gap-2 ml-auto shrink-0">
+        <form method="post" action="/admin/metadata/{{ a.id }}/update" class="flex gap-1.5 items-center">
+          <input type="text" name="label" value="{{ a.label }}" required
+                 class="border border-gray-200 rounded-lg px-2.5 py-1 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 w-40"/>
+          <button type="submit" class="text-xs border border-blue-300 text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg">Save</button>
+        </form>
+        <form method="post" action="/admin/metadata/{{ a.id }}/delete" onsubmit="return confirm('Delete {{ a.label }}?')">
+          <button type="submit" class="text-xs border border-red-200 text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="px-5 py-8 text-center">
+    <p class="text-sm text-gray-500">No audience labels yet.</p>
+  </div>
+  {% endif %}
+
+  <div class="px-5 py-4 border-t border-gray-100 bg-gray-50 rounded-b-xl">
+    <form method="post" action="/admin/metadata/create" class="flex gap-2 items-end">
+      <input type="hidden" name="criteria_type" value="audience"/>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Label</label>
+        <input type="text" name="label" required placeholder="e.g. Contractors"
+               class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"/>
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-700 mb-1">Value (machine key)</label>
+        <input type="text" name="value" required placeholder="e.g. Contractors"
+               class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"/>
+      </div>
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">
+        Add label
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-fill value field from label (doc types only)
+(function () {
+  const labelInput = document.querySelector('input[name="label"][placeholder*="Partnership"]');
+  const valueInput = document.getElementById('dt-value-input');
+  if (!labelInput || !valueInput) return;
+  let userEdited = false;
+  valueInput.addEventListener('input', () => { userEdited = true; });
+  labelInput.addEventListener('input', () => {
+    if (!userEdited) {
+      valueInput.value = labelInput.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    }
+  });
+})();
+</script>
+{% endblock %}

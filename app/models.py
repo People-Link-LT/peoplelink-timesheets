@@ -150,6 +150,20 @@ class DocMeta(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
 
+class MetaCriteria(Base):
+    """Admin-managed lists: document types and audience labels."""
+    __tablename__ = "meta_criteria"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    criteria_type: Mapped[str] = mapped_column(String(30))   # "doc_type" | "audience"
+    value: Mapped[str] = mapped_column(String(100))          # machine key
+    label: Mapped[str] = mapped_column(String(100))          # display name
+    color_class: Mapped[str] = mapped_column(String(200), default="border-gray-300 text-gray-600 bg-gray-50")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
 class FileCatalog(Base):
     """Lightweight index of every SharePoint file (listing only — no content).
 
