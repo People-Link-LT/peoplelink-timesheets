@@ -436,6 +436,42 @@ async def save_meta(
             updated_by=user.full_name,
             updated_at=now,
         ))
+
+    # Also update FileCatalog enrichment fields if provided
+    doc_type   = (body.get("doc_type") or "").strip() or None
+    company    = (body.get("company") or "").strip() or None
+    doc_number = (body.get("doc_number") or "").strip() or None
+    doc_year   = body.get("doc_year")
+    doc_month  = body.get("doc_month")
+    if doc_type is not None or company is not None or doc_number is not None \
+            or doc_year is not None or doc_month is not None:
+        from app.models import FileCatalog
+        import unicodedata as _ud
+        fc = db.execute(
+            select(FileCatalog).where(FileCatalog.item_id == item_id)
+        ).scalar_one_or_none()
+        if fc:
+            if doc_type is not None:
+                fc.doc_type = doc_type or None
+            if company is not None or body.get("company") == "":
+                fc.company = company
+                fc.company_norm = (
+                    _ud.normalize("NFKD", company).encode("ascii", "ignore").decode("ascii").lower()
+                    if company else None
+                )
+            if doc_number is not None or body.get("doc_number") == "":
+                fc.doc_number = doc_number
+            if doc_year is not None:
+                try:
+                    fc.doc_year = int(doc_year) if doc_year else None
+                except (ValueError, TypeError):
+                    pass
+            if doc_month is not None:
+                try:
+                    fc.doc_month = int(doc_month) if doc_month else None
+                except (ValueError, TypeError):
+                    pass
+
     db.commit()
     return JSONResponse({"ok": True})
 

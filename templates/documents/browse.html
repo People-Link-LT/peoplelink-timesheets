@@ -170,7 +170,12 @@
           data-comment="{{ has_comment | e }}"
           data-audience="{{ has_audience | tojson | e }}"
           data-is-archive="{{ 'true' if is_archive else 'false' }}"
-          data-no-index="{{ 'true' if is_no_index else 'false' }}">
+          data-no-index="{{ 'true' if is_no_index else 'false' }}"
+          data-doc-type="{{ cat.get('doc_type', '') }}"
+          data-company="{{ cat.get('company', '') | e }}"
+          data-doc-number="{{ cat.get('doc_number', '') | e }}"
+          data-doc-year="{{ cat.get('doc_year', '') }}"
+          data-doc-month="{{ cat.get('doc_month', '') }}">
 
         {# Name + inline meta (mobile) #}
         <td class="px-4 py-2.5">
@@ -220,11 +225,11 @@
                 'bg-rose-100 text-rose-700' if dt in ['debt', 'loan_contract'] else
                 'bg-gray-100 text-gray-500'
               %}
-              <span class="ml-1.5 text-xs px-1.5 py-0.5 rounded font-medium {{ dt_color }}">{{ dt | replace('_', ' ') }}</span>
+              <span class="meta-badge ml-1.5 text-xs px-1.5 py-0.5 rounded font-medium {{ dt_color }}">{{ dt | replace('_', ' ') }}</span>
               {% endif %}
-              {% if cat.get('doc_number') %}<span class="ml-1 text-xs text-gray-400">№{{ cat['doc_number'] }}</span>{% endif %}
-              {% if cat.get('doc_year') %}<span class="ml-1 text-xs text-gray-400">{{ cat['doc_year'] }}{% if cat.get('doc_month') %}-{{ '%02d' | format(cat['doc_month']) }}{% endif %}</span>{% endif %}
-              {% if cat.get('company') %}<span class="ml-1 text-xs text-gray-400">· {{ cat['company'] }}</span>{% endif %}
+              {% if cat.get('doc_number') %}<span class="meta-badge ml-1 text-xs text-gray-400">№{{ cat['doc_number'] }}</span>{% endif %}
+              {% if cat.get('doc_year') %}<span class="meta-badge ml-1 text-xs text-gray-400">{{ cat['doc_year'] }}{% if cat.get('doc_month') %}-{{ '%02d' | format(cat['doc_month']) }}{% endif %}</span>{% endif %}
+              {% if cat.get('company') %}<span class="meta-badge ml-1 text-xs text-gray-400">· {{ cat['company'] }}</span>{% endif %}
               {% endif %}
             </div>
           </div>
@@ -419,6 +424,62 @@
     </button>
   </div>
 
+  {# Metadata fields — shown only for files, hidden for category cards #}
+  <div id="meta-file-fields" class="px-5 pt-4 pb-0 space-y-3">
+    <div>
+      <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Document type</label>
+      <select id="meta-doc-type"
+              class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800
+                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
+        <option value="">— not set —</option>
+        {% for dt in ['invoice','proposal','client_contract','supplier_contract','nda',
+                      'employment_contract','freelance_contract','loan_contract',
+                      'power_of_attorney','order','request','policy','instruction',
+                      'announcement','training','marketing','results','template',
+                      'gdpr','safety','health_insurance','health_check','works_council',
+                      'it_assets','vehicle','office','consulting','assessment',
+                      'survey','client_growth','debt','other'] %}
+        <option value="{{ dt }}">{{ dt | replace('_',' ') }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Company</label>
+        <input id="meta-company" type="text" placeholder="Client / partner name"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800
+                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-300"/>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Doc number</label>
+        <input id="meta-doc-number" type="text" placeholder="Nr. 00123"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800
+                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-300"/>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Year</label>
+        <input id="meta-doc-year" type="number" placeholder="2025" min="2000" max="2099"
+               class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800
+                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-300"/>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Month</label>
+        <select id="meta-doc-month"
+                class="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white">
+          <option value="">—</option>
+          {% for m, mn in [(1,'January'),(2,'February'),(3,'March'),(4,'April'),(5,'May'),(6,'June'),
+                           (7,'July'),(8,'August'),(9,'September'),(10,'October'),(11,'November'),(12,'December')] %}
+          <option value="{{ m }}">{{ m }} – {{ mn }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="border-t border-gray-100 pt-1"></div>
+  </div>
+
   <div class="px-5 py-4 space-y-4">
     <div>
       <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
@@ -588,6 +649,7 @@ function openMeta(event, rowOrKey, nameOrUnused, commentOrUnused, audienceOrUnus
   _aiModel = '';
   document.getElementById('ai-gen-model').classList.add('hidden');
 
+  const fileFields = document.getElementById('meta-file-fields');
   if (typeof rowOrKey === 'string') {
     // Called from subcategory card: openMeta(event, key, name, comment, audience, subKey, subDrive)
     _metaRow = null;
@@ -603,6 +665,7 @@ function openMeta(event, rowOrKey, nameOrUnused, commentOrUnused, audienceOrUnus
       btn.style.opacity    = sel ? '1' : '0.6';
       btn.style.boxShadow  = sel ? '0 0 0 2px currentColor' : '';
     });
+    fileFields.style.display = 'none';
   } else {
     // Called from file table row
     _metaRow = rowOrKey;
@@ -620,6 +683,13 @@ function openMeta(event, rowOrKey, nameOrUnused, commentOrUnused, audienceOrUnus
       btn.style.opacity    = selected ? '1' : '0.6';
       btn.style.boxShadow  = selected ? '0 0 0 2px currentColor' : '';
     });
+    // Populate metadata fields
+    document.getElementById('meta-doc-type').value   = _metaRow.dataset.docType || '';
+    document.getElementById('meta-company').value    = _metaRow.dataset.company || '';
+    document.getElementById('meta-doc-number').value = _metaRow.dataset.docNumber || '';
+    document.getElementById('meta-doc-year').value   = _metaRow.dataset.docYear || '';
+    document.getElementById('meta-doc-month').value  = _metaRow.dataset.docMonth || '';
+    fileFields.style.display = '';
   }
 
   const modal    = document.getElementById('meta-modal');
@@ -678,6 +748,48 @@ function toggleAudience(btn) {
   btn.style.boxShadow  = !pressed ? '0 0 0 2px currentColor' : '';
 }
 
+const _DT_COLORS = {
+  invoice: 'bg-green-100 text-green-700',
+  proposal: 'bg-blue-100 text-blue-700', client_contract: 'bg-blue-100 text-blue-700',
+  employment_contract: 'bg-indigo-100 text-indigo-700',
+  supplier_contract: 'bg-indigo-100 text-indigo-700',
+  freelance_contract: 'bg-indigo-100 text-indigo-700',
+  loan_contract: 'bg-indigo-100 text-indigo-700',
+  gdpr: 'bg-purple-100 text-purple-700', nda: 'bg-purple-100 text-purple-700',
+  power_of_attorney: 'bg-purple-100 text-purple-700',
+  debt: 'bg-rose-100 text-rose-700',
+};
+function _dtColor(dt) {
+  if (_DT_COLORS[dt]) return _DT_COLORS[dt];
+  if (/policy|order|instruction|request/.test(dt)) return 'bg-amber-100 text-amber-700';
+  if (/contract/.test(dt)) return 'bg-indigo-100 text-indigo-700';
+  return 'bg-gray-100 text-gray-500';
+}
+
+function _refreshRowBadges(row, docType, company, docNumber, docYear, docMonth) {
+  const nameDiv = row.querySelector('td:first-child .min-w-0');
+  if (!nameDiv) return;
+  // Remove existing meta spans (everything after the filename <span>)
+  [...nameDiv.querySelectorAll('span.meta-badge')].forEach(el => el.remove());
+  function badge(cls, text) {
+    const s = document.createElement('span');
+    s.className = 'meta-badge ' + cls;
+    s.textContent = text;
+    nameDiv.appendChild(s);
+    return s;
+  }
+  if (docType) {
+    badge(`ml-1.5 text-xs px-1.5 py-0.5 rounded font-medium ${_dtColor(docType)}`,
+          docType.replace(/_/g, ' '));
+  }
+  if (docNumber) badge('ml-1 text-xs text-gray-400', `№${docNumber}`);
+  if (docYear) {
+    const yr = docMonth ? `${docYear}-${String(docMonth).padStart(2,'0')}` : docYear;
+    badge('ml-1 text-xs text-gray-400', yr);
+  }
+  if (company) badge('ml-1 text-xs text-gray-400', `· ${company}`);
+}
+
 function closeMeta() {
   const modal = document.getElementById('meta-modal');
   modal.style.transform = 'translateY(100%)';
@@ -703,19 +815,37 @@ async function saveMeta() {
   const audience = [...document.querySelectorAll('#meta-modal .audience-btn[aria-pressed="true"]')]
                      .map(b => b.dataset.audience);
 
+  // Metadata fields (file rows only)
+  const doc_type   = _metaRow ? document.getElementById('meta-doc-type').value   : undefined;
+  const company    = _metaRow ? document.getElementById('meta-company').value.trim()    : undefined;
+  const doc_number = _metaRow ? document.getElementById('meta-doc-number').value.trim() : undefined;
+  const doc_year   = _metaRow ? (document.getElementById('meta-doc-year').value || null)  : undefined;
+  const doc_month  = _metaRow ? (document.getElementById('meta-doc-month').value || null) : undefined;
+
   try {
+    const body = { item_id, drive, path, name, comment, audience,
+                   ai_generated: _aiGenerated, ai_model: _aiModel };
+    if (_metaRow) Object.assign(body, { doc_type, company, doc_number, doc_year, doc_month });
+
     const resp = await fetch('/documents/api/meta', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item_id, drive, path, name, comment, audience, ai_generated: _aiGenerated, ai_model: _aiModel }),
+      body: JSON.stringify(body),
     });
     const data = await resp.json();
     if (!data.ok) throw new Error(data.error || 'Save failed');
 
     if (_metaRow) {
-      // Update file table row data attrs and inline cell
-      _metaRow.dataset.comment  = comment;
-      _metaRow.dataset.audience = JSON.stringify(audience);
+      // Update row data attrs
+      _metaRow.dataset.comment   = comment;
+      _metaRow.dataset.audience  = JSON.stringify(audience);
+      if (doc_type   !== undefined) _metaRow.dataset.docType   = doc_type;
+      if (company    !== undefined) _metaRow.dataset.company   = company;
+      if (doc_number !== undefined) _metaRow.dataset.docNumber = doc_number;
+      if (doc_year   !== undefined) _metaRow.dataset.docYear   = doc_year || '';
+      if (doc_month  !== undefined) _metaRow.dataset.docMonth  = doc_month || '';
+      // Refresh the inline metadata badges in the name cell
+      _refreshRowBadges(_metaRow, doc_type, company, doc_number, doc_year, doc_month);
     }
 
     // Update the comment cell (desktop column) — only exists in file table rows
