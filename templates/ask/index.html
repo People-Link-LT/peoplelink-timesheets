@@ -81,13 +81,24 @@ function escapeHtml(t) {
 }
 
 function renderMarkdown(text) {
-  return text
+  // Extract links first (before HTML-escaping) so URLs with & are preserved verbatim
+  const links = [];
+  text = text.replace(/\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (_, label, url) => {
+    const i = links.length;
+    links.push(`<a href="${url}" target="_blank" rel="noopener" class="text-blue-600 underline hover:text-blue-800">${escapeHtml(label)}</a>`);
+    return `\x00LINK${i}\x00`;
+  });
+
+  text = text
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-600 underline hover:text-blue-800">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\n]+)\*/g, '<em class="text-gray-500">$1</em>')
     .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
     .replace(/\n/g, '<br>');
+
+  // Restore links
+  links.forEach((html, i) => { text = text.replace(`\x00LINK${i}\x00`, html); });
+  return text;
 }
 
 function dayLabel(isoStr) {

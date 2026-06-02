@@ -22,7 +22,7 @@ Use the search_files tool whenever the user asks to find or list specific files 
 - Pass only the company name as `query` — never include document-type words in the query string; use the `doc_type` parameter for filtering instead.
 - The catalog has AI-enriched metadata: each file has a `doc_type` (invoice, proposal, client_contract, …) and a `company` field extracted from SharePoint. Search matches against the company name field directly, so short company names work best (e.g. "Ramirent" not "UAB Ramirent AS").
 - If a search returns no results, retry with a shorter version of the company name (drop "UAB", "AS", "Ltd", etc.).
-- Results are grouped by company with doc_type labels. Present them as a markdown list of clickable links, newest first.
+- Results already contain properly formatted markdown links like [filename](url). Copy them exactly as-is into your response — never rewrite or reconstruct the URLs.
 - The result shows company name, doc_type, document number, and date for each file — trust these fields completely.
 
 ## Answering from documents
@@ -135,7 +135,6 @@ def _format_file_results(rows: list[FileCatalog], limit: int = MAX_FILE_RESULTS)
         return "No matching files found in the catalog."
 
     from collections import defaultdict
-    # Group by company (enriched) or folder path (fallback)
     groups: dict[str, list[FileCatalog]] = defaultdict(list)
     for r in rows:
         group_key = r.company or f"{r.drive}/{r.folder_path}".rstrip("/")
@@ -143,18 +142,16 @@ def _format_file_results(rows: list[FileCatalog], limit: int = MAX_FILE_RESULTS)
 
     lines = [f"Found {len(rows)} file(s) across {len(groups)} group(s):"]
     for group_key, files in groups.items():
-        # Show doc_type for this group if consistent
         types = {f.doc_type for f in files if f.doc_type}
         type_label = f" [{', '.join(sorted(types))}]" if types else ""
         lines.append(f"\n{group_key}{type_label} ({len(files)} files)")
         for r in files:
             date = r.modified.date().isoformat() if r.modified else "?"
-            url = r.web_url or ""
-            parts = [r.name, date]
-            if r.doc_number:
-                parts.append(f"Nr.{r.doc_number}")
-            parts.append(url)
-            lines.append(f"  - {' | '.join(parts)}")
+            nr = f" Nr.{r.doc_number}" if r.doc_number else ""
+            if r.web_url:
+                lines.append(f"  - [{r.name}]({r.web_url}) | {date}{nr}")
+            else:
+                lines.append(f"  - {r.name} | {date}{nr}")
 
     if len(rows) >= limit:
         lines.append("\n_(Showing newest 20 — there may be more. Narrow your search with a date or keyword.)_")
