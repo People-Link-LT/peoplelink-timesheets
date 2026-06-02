@@ -102,7 +102,7 @@
 <div id="meta-modal"
      class="fixed inset-x-4 bottom-4 z-50 bg-white rounded-2xl shadow-2xl
             translate-y-[120%] transition-transform duration-250 ease-out
-            sm:inset-auto sm:top-1/2 sm:left-1/2 sm:w-96 sm:rounded-2xl"
+            sm:inset-auto sm:top-1/2 sm:left-1/2 sm:w-96 sm:rounded-2xl hidden"
      style="max-width:440px">
 
   <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
@@ -181,9 +181,12 @@ function openMeta(event, key, name, comment, audience) {
     btn.style.boxShadow  = sel ? '0 0 0 2px currentColor' : '';
   });
 
+  const modal = document.getElementById('meta-modal');
+  modal.classList.remove('hidden');
+  modal.style.transform = '';
   document.getElementById('meta-backdrop').classList.remove('hidden');
   requestAnimationFrame(() => {
-    document.getElementById('meta-modal').style.transform = 'translateY(0)';
+    modal.style.transform = 'translateY(0)';
   });
   document.getElementById('meta-comment').focus();
 }
@@ -229,8 +232,10 @@ function toggleAudience(btn) {
 }
 
 function closeMeta() {
-  document.getElementById('meta-modal').style.transform = 'translateY(120%)';
+  const modal = document.getElementById('meta-modal');
+  modal.style.transform = 'translateY(120%)';
   document.getElementById('meta-backdrop').classList.add('hidden');
+  setTimeout(() => modal.classList.add('hidden'), 260);
   _currentKey = null;
 }
 

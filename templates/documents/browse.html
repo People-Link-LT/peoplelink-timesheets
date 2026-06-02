@@ -397,7 +397,7 @@
      class="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl
             translate-y-full transition-transform duration-250 ease-out
             max-w-lg mx-auto sm:inset-auto sm:top-1/2 sm:left-1/2
-            sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:shadow-2xl"
+            sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:shadow-2xl hidden"
      style="max-width:480px">
   <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
     <div>
@@ -615,6 +615,7 @@ function openMeta(event, rowOrKey, nameOrUnused, commentOrUnused, audienceOrUnus
 
   const modal    = document.getElementById('meta-modal');
   const backdrop = document.getElementById('meta-backdrop');
+  modal.classList.remove('hidden');
   modal.style.transform = '';
   backdrop.classList.remove('hidden');
   requestAnimationFrame(() => {
@@ -669,8 +670,10 @@ function toggleAudience(btn) {
 }
 
 function closeMeta() {
-  document.getElementById('meta-modal').style.transform = 'translateY(100%)';
+  const modal = document.getElementById('meta-modal');
+  modal.style.transform = 'translateY(100%)';
   document.getElementById('meta-backdrop').classList.add('hidden');
+  setTimeout(() => modal.classList.add('hidden'), 260);
   _metaRow = null;
   _metaSubKey = null;
   _metaSubDrive = null;
