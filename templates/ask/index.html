@@ -5,22 +5,29 @@
 <div class="flex flex-col h-[calc(100vh-4rem)]">
 
   <!-- Header -->
-  <div class="mb-4 flex items-center justify-between">
+  <div class="mb-4 flex items-center justify-between shrink-0">
     <div>
       <h1 class="text-xl font-semibold text-gray-900">Ask PL</h1>
       <p class="text-sm text-gray-500 mt-0.5">Ask anything about People Link — assignments, processes, documents.</p>
     </div>
-    {% if user.is_admin %}
-    <a href="/ask/admin/rules" class="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5">
-      Manage rules
-    </a>
-    {% endif %}
+    <div class="flex items-center gap-2">
+      <button id="clear-btn" onclick="clearHistory()"
+              class="text-xs text-gray-400 hover:text-red-500 border border-gray-200 hover:border-red-200 rounded-lg px-3 py-1.5 transition-colors"
+              title="Clear chat history">
+        Clear chat
+      </button>
+      {% if user.is_admin %}
+      <a href="/ask/admin/rules" class="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5">
+        Manage rules
+      </a>
+      {% endif %}
+    </div>
   </div>
 
   <!-- Messages -->
-  <div id="messages" class="flex-1 overflow-y-auto space-y-5 pr-1 pb-4">
-    <!-- Welcome -->
-    <div class="flex gap-3">
+  <div id="messages" class="flex-1 overflow-y-auto space-y-4 pr-1 pb-4">
+    <!-- Welcome (always shown at top) -->
+    <div class="flex gap-3" id="welcome-msg">
       <div class="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shrink-0 mt-0.5">
         <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
@@ -30,10 +37,13 @@
         <p class="text-sm text-gray-700">Hi <strong>{{ user.full_name.split()[0] }}</strong>! I'm Ask PL — your People Link AI assistant. Ask me about assignments, clients, processes, or any internal knowledge.</p>
       </div>
     </div>
+
+    <!-- History placeholder (filled by JS) -->
+    <div id="history-anchor"></div>
   </div>
 
   <!-- Input -->
-  <div class="border-t border-gray-200 pt-4">
+  <div class="border-t border-gray-200 pt-4 shrink-0">
     <form id="ask-form" class="flex gap-3">
       <input
         id="question-input"
@@ -57,13 +67,46 @@
 </div>
 
 <script>
-const form = document.getElementById('ask-form');
-const input = document.getElementById('question-input');
-const sendBtn = document.getElementById('send-btn');
-const messages = document.getElementById('messages');
+const form       = document.getElementById('ask-form');
+const input      = document.getElementById('question-input');
+const sendBtn    = document.getElementById('send-btn');
+const messages   = document.getElementById('messages');
+const histAnchor = document.getElementById('history-anchor');
 let conversationHistory = [];
 
-function addMessage(role, html) {
+// ── helpers ────────────────────────────────────────────────────────────────
+
+function escapeHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderMarkdown(text) {
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-600 underline hover:text-blue-800">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em class="text-gray-500">$1</em>')
+    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
+    .replace(/\n/g, '<br>');
+}
+
+function dayLabel(isoStr) {
+  const d = new Date(isoStr);
+  const today = new Date();
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString())     return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+function addDateSeparator(label, container) {
+  const div = document.createElement('div');
+  div.className = 'flex items-center gap-3 my-3';
+  div.innerHTML = `<div class="flex-1 border-t border-gray-100"></div><span class="text-xs text-gray-300 whitespace-nowrap">${escapeHtml(label)}</span><div class="flex-1 border-t border-gray-100"></div>`;
+  (container || messages).appendChild(div);
+}
+
+function addMessage(role, html, container) {
   const wrapper = document.createElement('div');
   wrapper.className = 'flex gap-3' + (role === 'user' ? ' justify-end' : '');
 
@@ -84,31 +127,16 @@ function addMessage(role, html) {
       </div>`;
   }
 
-  messages.appendChild(wrapper);
-  messages.scrollTop = messages.scrollHeight;
+  (container || messages).appendChild(wrapper);
   return wrapper;
-}
-
-function escapeHtml(text) {
-  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function renderMarkdown(text) {
-  return text
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-600 underline hover:text-blue-800">$1</a>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*\n]+)\*/g, '<em class="text-gray-500">$1</em>')
-    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    .replace(/\n/g, '<br>');
 }
 
 function addSources(wrapper, sources, fullText) {
   if (!sources || !sources.length) return;
-  // Suppress sources whose URL is already linked inline in the response
   const filtered = sources.filter(s => !s.url || !fullText.includes(s.url));
   if (!filtered.length) return;
   const body = wrapper.querySelector('.message-body');
+  if (!body) return;
   const div = document.createElement('div');
   div.className = 'mt-3 pt-3 border-t border-gray-100';
   div.innerHTML = `<p class="text-xs text-gray-400 font-medium mb-1">Sources</p>` +
@@ -119,6 +147,60 @@ function addSources(wrapper, sources, fullText) {
   body.appendChild(div);
 }
 
+// ── history load ───────────────────────────────────────────────────────────
+
+async function loadHistory() {
+  try {
+    const resp = await fetch('/ask/history');
+    if (!resp.ok) return;
+    const msgs = await resp.json();
+    if (!msgs.length) { input.focus(); return; }
+
+    // Insert history before the anchor
+    let lastDayLabel = null;
+    const frag = document.createDocumentFragment();
+
+    for (const msg of msgs) {
+      const dl = dayLabel(msg.created_at);
+      if (dl !== lastDayLabel) {
+        addDateSeparator(dl, frag);
+        lastDayLabel = dl;
+      }
+      const wrapper = addMessage(msg.role, msg.role === 'assistant' ? renderMarkdown(msg.content) : msg.content, frag);
+      if (msg.role === 'assistant' && msg.sources && msg.sources.length) {
+        addSources(wrapper, msg.sources, msg.content);
+      }
+    }
+
+    histAnchor.parentNode.insertBefore(frag, histAnchor);
+
+    // Prime conversation context with last 4 turns (8 messages)
+    conversationHistory = msgs.slice(-8).map(m => ({ role: m.role, content: m.content }));
+
+    messages.scrollTop = messages.scrollHeight;
+  } catch (e) {
+    // silently skip — history is non-critical
+  }
+  input.focus();
+}
+
+// ── clear history ──────────────────────────────────────────────────────────
+
+async function clearHistory() {
+  if (!confirm('Clear all chat history? This cannot be undone.')) return;
+  await fetch('/ask/history', { method: 'DELETE' });
+  // remove all rendered history messages (everything before the anchor)
+  let node = histAnchor.previousSibling;
+  while (node && node !== document.getElementById('welcome-msg')) {
+    const prev = node.previousSibling;
+    node.parentNode.removeChild(node);
+    node = prev;
+  }
+  conversationHistory = [];
+}
+
+// ── send & stream ──────────────────────────────────────────────────────────
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const question = input.value.trim();
@@ -128,11 +210,13 @@ form.addEventListener('submit', async (e) => {
   sendBtn.disabled = true;
 
   addMessage('user', question);
-
   const assistantWrapper = addMessage('assistant', '<span class="animate-pulse text-gray-400">Thinking…</span>');
   const bodyEl = assistantWrapper.querySelector('.message-body');
+  messages.scrollTop = messages.scrollHeight;
+
   let fullText = '';
   let started = false;
+  let finalSources = [];
 
   try {
     const resp = await fetch('/ask/query', {
@@ -148,7 +232,6 @@ form.addEventListener('submit', async (e) => {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop();
@@ -169,10 +252,23 @@ form.addEventListener('submit', async (e) => {
           messages.scrollTop = messages.scrollHeight;
         }
         if (payload.done) {
-          addSources(assistantWrapper, payload.sources, fullText);
-          conversationHistory.push({role: 'user', content: question});
-          conversationHistory.push({role: 'assistant', content: fullText});
+          finalSources = payload.sources || [];
+          addSources(assistantWrapper, finalSources, fullText);
+          conversationHistory.push({ role: 'user', content: question });
+          conversationHistory.push({ role: 'assistant', content: fullText });
           if (conversationHistory.length > 8) conversationHistory = conversationHistory.slice(-8);
+
+          // Persist to DB (fire-and-forget)
+          fetch('/ask/history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: [
+                { role: 'user', content: question },
+                { role: 'assistant', content: fullText, sources: finalSources },
+              ],
+            }),
+          }).catch(() => {});
         }
       }
     }
@@ -184,6 +280,7 @@ form.addEventListener('submit', async (e) => {
   }
 });
 
-input.focus();
+// ── init ───────────────────────────────────────────────────────────────────
+loadHistory();
 </script>
 {% endblock %}

@@ -1,15 +1,17 @@
+import json
 import logging
 import threading
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
-from sqlalchemy import select
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.ask_engine import ask_stream
 from app.auth import get_current_admin, get_current_user
 from app.database import get_db
-from app.models import AskRule, User
+from app.models import AskRule, ChatMessage, User
 from app.templates import templates
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,60 @@ async def ask_query(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Chat history
+# ---------------------------------------------------------------------------
+
+@router.get("/history")
+def get_history(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    cutoff = datetime.now(timezone.utc) - timedelta(days=10)
+    msgs = db.execute(
+        select(ChatMessage)
+        .where(ChatMessage.user_id == user.id)
+        .where(ChatMessage.created_at >= cutoff)
+        .order_by(ChatMessage.created_at)
+    ).scalars().all()
+    return JSONResponse([
+        {
+            "role": m.role,
+            "content": m.content,
+            "sources": json.loads(m.sources) if m.sources else [],
+            "created_at": m.created_at.isoformat() + "Z",
+        }
+        for m in msgs
+    ])
+
+
+@router.post("/history")
+async def save_history(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    body = await request.json()
+    for msg in body.get("messages", []):
+        role = msg.get("role", "")
+        content = (msg.get("content") or "").strip()
+        if role not in ("user", "assistant") or not content:
+            continue
+        sources = msg.get("sources")
+        db.add(ChatMessage(
+            user_id=user.id,
+            role=role,
+            content=content,
+            sources=json.dumps(sources) if sources else None,
+        ))
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.delete("/history")
+def clear_history(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    db.execute(delete(ChatMessage).where(ChatMessage.user_id == user.id))
+    db.commit()
+    return JSONResponse({"ok": True})
 
 
 # ---------------------------------------------------------------------------
