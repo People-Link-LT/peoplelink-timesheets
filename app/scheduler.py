@@ -64,6 +64,39 @@ def run_vacuum_sync():
         logger.error(f"VACUUM ANALYZE failed: {e}")
 
 
+def run_db_cleanup():
+    """Delete chat messages older than 90 days and log DB size."""
+    db: Session = SessionLocal()
+    try:
+        deleted = db.execute(text(
+            "DELETE FROM chat_messages WHERE created_at < NOW() - INTERVAL '90 days'"
+        )).rowcount
+        db.commit()
+        if deleted:
+            logger.info(f"DB cleanup: deleted {deleted} old chat messages")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"DB cleanup failed: {e}")
+    finally:
+        db.close()
+
+    # Log table sizes so we can see what's growing
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT relname AS table,
+                       pg_size_pretty(pg_total_relation_size(relid)) AS total_size,
+                       pg_total_relation_size(relid) AS bytes
+                FROM pg_catalog.pg_statio_user_tables
+                ORDER BY bytes DESC
+                LIMIT 10
+            """)).fetchall()
+            sizes = ", ".join(f"{r[0]}={r[1]}" for r in rows)
+            logger.info(f"DB table sizes: {sizes}")
+    except Exception as e:
+        logger.error(f"DB size check failed: {e}")
+
+
 def start_scheduler():
     scheduler.add_job(sync_assignments, "cron", hour=3, minute=0, id="invenias_sync", replace_existing=True)
     from app.backup import run_backup, check_backup_health
@@ -73,5 +106,6 @@ def start_scheduler():
     scheduler.add_job(run_indexing_sync, "cron", hour=7, minute=0, id="ask_index_am", replace_existing=True, timezone=VILNIUS)
     scheduler.add_job(run_indexing_sync, "cron", hour=13, minute=0, id="ask_index_pm", replace_existing=True, timezone=VILNIUS)
     scheduler.add_job(run_vacuum_sync, "cron", day_of_week="sun", hour=3, minute=0, id="vacuum_db", replace_existing=True, timezone=VILNIUS)
+    scheduler.add_job(run_db_cleanup, "cron", hour=4, minute=0, id="db_cleanup", replace_existing=True, timezone=VILNIUS)
     scheduler.start()
-    logger.info("Scheduler started (sync 03:00, backup 02:30, index 07:00+13:00 Vilnius, health check 17:00, vacuum Sun 03:00).")
+    logger.info("Scheduler started (sync 03:00, backup 02:30, index 07:00+13:00 Vilnius, health check 17:00, vacuum Sun 03:00, cleanup 04:00).")

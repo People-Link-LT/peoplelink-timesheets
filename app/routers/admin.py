@@ -3,12 +3,12 @@ from datetime import datetime
 
 from app.templates import templates
 from fastapi import APIRouter, Depends, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth import get_current_admin, hash_password
 from app.models import User, Team, MetaCriteria
-from sqlalchemy import select
 from app.scheduler import sync_assignments
 
 router = APIRouter(prefix="/admin")
@@ -131,6 +131,26 @@ def manual_backup(request: Request, db: Session = Depends(get_db), admin: User =
         "user": admin, "users": users, "teams": teams,
         "backup_ok": result["ok"],
         "backup_messages": result["messages"],
+    })
+
+
+@router.get("/db-size")
+def db_size(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    tables = db.execute(text("""
+        SELECT relname,
+               pg_size_pretty(pg_total_relation_size(relid)) AS total,
+               pg_size_pretty(pg_relation_size(relid)) AS data,
+               pg_size_pretty(pg_total_relation_size(relid) - pg_relation_size(relid)) AS indexes,
+               pg_total_relation_size(relid) AS bytes
+        FROM pg_catalog.pg_statio_user_tables
+        ORDER BY bytes DESC
+    """)).fetchall()
+    total = db.execute(text(
+        "SELECT pg_size_pretty(pg_database_size(current_database()))"
+    )).scalar()
+    return JSONResponse({
+        "database_total": total,
+        "tables": [{"table": r[0], "total": r[1], "data": r[2], "indexes": r[3]} for r in tables],
     })
 
 
