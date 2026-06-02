@@ -341,6 +341,22 @@ async def browse(
         cat_rows = db.execute(
             select(FileCatalog).where(FileCatalog.item_id.in_(item_ids))
         ).scalars().all()
+        # Pull ai_summary / ai_topics / ai_applies_to from KnowledgeChunk (first chunk per file)
+        chunk_rows = db.execute(
+            select(KnowledgeChunk.source_id, KnowledgeChunk.ai_summary,
+                   KnowledgeChunk.ai_topics, KnowledgeChunk.ai_applies_to)
+            .where(KnowledgeChunk.source_type == "sharepoint")
+            .where(KnowledgeChunk.source_id.in_(item_ids))
+        ).all()
+        chunk_meta: dict[str, dict] = {}
+        for row in chunk_rows:
+            base = row.source_id.split("::")[0]
+            if base not in chunk_meta:
+                chunk_meta[base] = {
+                    "summary":    row.ai_summary or "",
+                    "topics":     _json.loads(row.ai_topics) if row.ai_topics else [],
+                    "applies_to": row.ai_applies_to or "",
+                }
         catalog = {
             r.item_id: {
                 "doc_type":   r.doc_type or "",
@@ -348,9 +364,7 @@ async def browse(
                 "doc_number": r.doc_number or "",
                 "doc_year":   r.doc_year,
                 "doc_month":  r.doc_month,
-                "summary":    "",
-                "topics":     [],
-                "applies_to": "",
+                **chunk_meta.get(r.item_id, {"summary": "", "topics": [], "applies_to": ""}),
             }
             for r in cat_rows
         }

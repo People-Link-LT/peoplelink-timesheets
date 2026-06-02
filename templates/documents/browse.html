@@ -208,7 +208,8 @@
             {% endif %}
             <div class="min-w-0">
               <span class="font-medium text-gray-800">{{ f.name }}</span>
-              {% if cat.get('doc_type') and not f.is_folder %}
+              {% if not f.is_folder %}
+              {% if cat.get('doc_type') %}
               {% set dt = cat['doc_type'] %}
               {% set dt_color =
                 'bg-green-100 text-green-700' if dt in ['invoice'] else
@@ -219,9 +220,11 @@
                 'bg-rose-100 text-rose-700' if dt in ['debt', 'loan_contract'] else
                 'bg-gray-100 text-gray-500'
               %}
-              <span class="ml-1.5 text-xs px-1.5 py-0.5 rounded font-medium {{ dt_color }}">{{ dt }}</span>
+              <span class="ml-1.5 text-xs px-1.5 py-0.5 rounded font-medium {{ dt_color }}">{{ dt | replace('_', ' ') }}</span>
+              {% endif %}
               {% if cat.get('doc_number') %}<span class="ml-1 text-xs text-gray-400">№{{ cat['doc_number'] }}</span>{% endif %}
               {% if cat.get('doc_year') %}<span class="ml-1 text-xs text-gray-400">{{ cat['doc_year'] }}{% if cat.get('doc_month') %}-{{ '%02d' | format(cat['doc_month']) }}{% endif %}</span>{% endif %}
+              {% if cat.get('company') %}<span class="ml-1 text-xs text-gray-400">· {{ cat['company'] }}</span>{% endif %}
               {% endif %}
             </div>
           </div>
@@ -264,6 +267,12 @@
                 {% elif a == 'Everybody' %}bg-green-100 text-green-700
                 {% elif a == 'Admin' %}bg-amber-100 text-amber-700
                 {% else %}bg-purple-100 text-purple-700{% endif %}">{{ a }}</span>
+              {% endfor %}
+            </div>
+            {% elif cat.get('topics') %}
+            <div class="flex flex-wrap gap-1 mt-1">
+              {% for t in cat['topics'][:4] %}
+              <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{{ t }}</span>
               {% endfor %}
             </div>
             {% elif cat.get('applies_to') and cat['applies_to'] not in ['null', 'all_employees'] %}
