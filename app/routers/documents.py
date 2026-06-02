@@ -348,9 +348,9 @@ async def browse(
                 "doc_number": r.doc_number or "",
                 "doc_year":   r.doc_year,
                 "doc_month":  r.doc_month,
-                "summary":    r.ai_summary or "",
-                "topics":     _json.loads(r.ai_topics) if r.ai_topics else [],
-                "applies_to": r.ai_applies_to or "",
+                "summary":    "",
+                "topics":     [],
+                "applies_to": "",
             }
             for r in cat_rows
         }
