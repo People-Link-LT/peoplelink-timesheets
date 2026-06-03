@@ -23,19 +23,20 @@ db_ready = False
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_ready
-    max_attempts = 10
-    for attempt in range(max_attempts):
+    # Try up to 3 quick attempts, then fall through to maintenance mode so the
+    # HTTP server starts fast (demo / health check) even when the DB is down.
+    for attempt in range(3):
         try:
             init_db()
             db_ready = True
             break
         except Exception as e:
-            if attempt == max_attempts - 1:
-                logger.critical(f"DB unreachable after {max_attempts} attempts — running in maintenance mode: {e}")
-                break
-            wait = min(2 ** attempt, 30)
-            logger.warning(f"init_db attempt {attempt + 1}/{max_attempts} failed: {e}. Retrying in {wait}s")
-            await asyncio.sleep(wait)
+            wait = 2 ** attempt  # 1s, 2s
+            if attempt < 2:
+                logger.warning(f"init_db attempt {attempt + 1}/3 failed: {e}. Retrying in {wait}s")
+                await asyncio.sleep(wait)
+            else:
+                logger.critical(f"DB unreachable — running in maintenance mode: {e}")
     if db_ready:
         try:
             items = await fetch_active_assignments()
