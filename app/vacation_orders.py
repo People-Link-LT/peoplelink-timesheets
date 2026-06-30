@@ -277,7 +277,7 @@ def generate_docx(entries: list[dict], month_num: int, order_num: int, order_dat
         run.font.name = "Times New Roman"
         run.font.size = Pt(12)
 
-    add_para("UŽDAROSIOS AKCINĖS BENDROVĖS „PEOPLE LINK"", bold=True)
+    add_para('UŽDAROSIOS AKCINĖS BENDROVĖS „PEOPLE LINK“', bold=True)
     add_para("DIREKTORĖ", bold=True)
     add_para("ĮSAKYMAS", bold=True)
     add_para("DĖL KASMETINIŲ, NEAPMOKAMŲ ATOSTOGŲ IR PAPILDOMŲ POILSIO DIENŲ SUTEIKIMO", bold=True)
