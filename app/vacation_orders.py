@@ -94,6 +94,7 @@ async def _credentials():
         settings.sharepoint_client_secret,
         settings.sharepoint_site_hostname,
         settings.sharepoint_site_path,
+        drive_name=settings.sharepoint_drive_name,
     )
 
 
