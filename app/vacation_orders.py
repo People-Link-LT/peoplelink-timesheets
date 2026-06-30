@@ -235,44 +235,59 @@ def _format_terminas(val) -> str:
 
 
 def process_entries(entries: list[dict]) -> list[dict]:
-    """Merge same person + same leave type; sort by type order."""
-    grouped: dict[tuple, list] = {}
+    """Merge same person + same leave type, then merge all types per person; sort by first leave type."""
+    # Step 1: merge same person + same leave type
+    by_type: dict[tuple, list] = {}
     for e in entries:
-        key = (e["name"], e["leave_type"])
-        grouped.setdefault(key, []).append(e)
+        by_type.setdefault((e["name"], e["leave_type"]), []).append(e)
 
-    result = []
-    for (name, leave_type), group in grouped.items():
+    type_merged = []
+    for (name, leave_type), group in by_type.items():
         if len(group) == 1:
-            result.append(group[0])
+            type_merged.append(group[0])
         else:
             merged = dict(group[0])
             merged["periods"] = group
-            result.append(merged)
+            type_merged.append(merged)
 
+    # Step 2: merge all leave types for the same person into one entry
+    by_person: dict[str, list] = {}
+    for e in type_merged:
+        by_person.setdefault(e["name"], []).append(e)
+
+    result = []
     order_map = {t: i for i, t in enumerate(LEAVE_ORDER)}
+    for name, person_entries in by_person.items():
+        person_entries.sort(key=lambda e: order_map.get(e["leave_type"], 99))
+        if len(person_entries) == 1:
+            result.append(person_entries[0])
+        else:
+            combined = dict(person_entries[0])
+            combined["multi_types"] = person_entries
+            result.append(combined)
+
     return sorted(result, key=lambda e: order_map.get(e["leave_type"], 99))
 
 
-def build_entry_text(entry: dict, month_num: int) -> str:
+def _type_fragment(entry: dict, month_num: int) -> str:
+    """Return the leave text for one type WITHOUT the trailing period."""
     lt = entry["leave_type"]
     mon = MONTH_GEN[month_num]
     periods = entry.get("periods", [entry])
-    name_d = entry["name_dative"]
 
     if lt == "kasmetines":
         parts = [
             f"{days_text(p['days'])} kasmetinių atostogų {'2026 ' if i == 0 else ''}{p['date_str']}"
             for i, p in enumerate(periods)
         ]
-        return f"{name_d} {' ir '.join(parts)}, atostoginius sumokant kartu su {mon} mėnesio atlyginimu."
+        return f"{' ir '.join(parts)}, atostoginius sumokant kartu su {mon} mėnesio atlyginimu"
 
     if lt in ("mama", "teva"):
         parts = [
             f"1 papildomą poilsio dieną {'2026 m. ' if i == 0 else ''}{p['date_str']}"
             for i, p in enumerate(periods)
         ]
-        return f"{name_d} {' ir '.join(parts)}, nes augina vaiką iki dvylikos metų, atostoginius sumokant kartu su {mon} mėnesio atlyginimu."
+        return f"{' ir '.join(parts)}, nes augina vaiką iki dvylikos metų, atostoginius sumokant kartu su {mon} mėnesio atlyginimu"
 
     if lt == "stazas":
         dk = "(vadovaujantis Lietuvos Respublikos darbo kodekso (Žin., 2002, Nr. 64-2569; 2002, Nr. IX-926) 233 straipsniu)"
@@ -280,16 +295,24 @@ def build_entry_text(entry: dict, month_num: int) -> str:
             f"{days_text(p['days'])} kasmetinių atostogų {dk} {'2026 ' if i == 0 else ''}{p['date_str']}"
             for i, p in enumerate(periods)
         ]
-        return f"{name_d} {' ir '.join(parts)}, atostoginius sumokant kartu su {mon} mėnesio atlyginimu."
+        return f"{' ir '.join(parts)}, atostoginius sumokant kartu su {mon} mėnesio atlyginimu"
 
     if lt == "neapmokamos":
         parts = [
             f"{days_text(p['days'])} neapmokamų atostogų {'2026 ' if i == 0 else ''}{p['date_str']}"
             for i, p in enumerate(periods)
         ]
-        return f"{name_d} {' ir '.join(parts)}."
+        return " ir ".join(parts)
 
     return ""
+
+
+def build_entry_text(entry: dict, month_num: int) -> str:
+    name_d = entry["name_dative"]
+    if "multi_types" in entry:
+        fragments = [_type_fragment(sub, month_num) for sub in entry["multi_types"]]
+        return f"{name_d} {' ir '.join(fragments)}."
+    return f"{name_d} {_type_fragment(entry, month_num)}."
 
 
 def generate_docx(entries: list[dict], month_num: int, order_num: int, order_date: date) -> bytes:
