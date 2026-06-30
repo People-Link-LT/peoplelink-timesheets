@@ -33,8 +33,10 @@ HOLIDAYS_2026 = {
     date(2026, 12, 25), date(2026, 12, 26),
 }
 
-EXCEL_PATH = "Praymai/Atostogų prašymai.xlsx"
-ORDERS_FOLDER = "Įsakymai/Atostogos/Įsakymai_Atostogos_2026"
+EXCEL_PATH = "Atostogų prašymai.xlsx"
+EXCEL_DRIVE = "Praymai"
+ORDERS_FOLDER = "Atostogos/Įsakymai_Atostogos_2026"
+ORDERS_DRIVE = "sakymai"
 LEAVE_ORDER = ["kasmetines", "mama", "teva", "stazas", "neapmokamos"]
 
 
@@ -88,28 +90,23 @@ def get_leave_type(comment: str) -> str:
 
 
 _GRAPH = "https://graph.microsoft.com/v1.0"
-_VAC_DRIVE_CACHE: dict = {}
 
 
-async def _credentials():
-    """Find the 'doc' document library drive by its webUrl, cache the result."""
+async def _get_drive(url_name: str) -> tuple[str, str]:
+    """Return (token, drive_base) for the library whose webUrl ends with /{url_name}."""
     from app.sharepoint import _get_token, _cache_get, _cache_set
 
-    cache_key = "vac:drive"
-    cached = _cache_get(cache_key)
-    if cached:
-        token_key = f"tok:{settings.sharepoint_tenant_id}:{settings.sharepoint_client_id}"
-        token = _cache_get(token_key)
-        if token:
-            return token, cached
-
+    cache_key = f"vac:drive:{url_name}"
     token = await _get_token(
         settings.sharepoint_tenant_id,
         settings.sharepoint_client_id,
         settings.sharepoint_client_secret,
     )
-    auth = {"Authorization": f"Bearer {token}"}
+    cached = _cache_get(cache_key)
+    if cached:
+        return token, cached
 
+    auth = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(timeout=30) as client:
         site_resp = await client.get(
             f"{_GRAPH}/sites/{settings.sharepoint_site_hostname}:/{settings.sharepoint_site_path}",
@@ -123,13 +120,11 @@ async def _credentials():
         drives = drives_resp.json()["value"]
 
         drive = next(
-            (d for d in drives if d.get("webUrl", "").rstrip("/").endswith("/doc")),
+            (d for d in drives if d.get("webUrl", "").rstrip("/").endswith(f"/{url_name}")),
             None,
         )
         if not drive:
-            raise RuntimeError(
-                f"'doc' library not found. Available: {[d.get('webUrl') for d in drives]}"
-            )
+            raise RuntimeError(f"Library '{url_name}' not found on SharePoint")
         drive_base = f"{_GRAPH}/drives/{drive['id']}"
 
     _cache_set(cache_key, drive_base, 86400)
@@ -137,7 +132,7 @@ async def _credentials():
 
 
 async def download_excel() -> bytes:
-    token, drive_base = await _credentials()
+    token, drive_base = await _get_drive(EXCEL_DRIVE)
     async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
         resp = await client.get(
             f"{drive_base}/root:/{EXCEL_PATH}:/content",
@@ -148,7 +143,7 @@ async def download_excel() -> bytes:
 
 
 async def get_next_order_number() -> int:
-    token, drive_base = await _credentials()
+    token, drive_base = await _get_drive(ORDERS_DRIVE)
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(
             f"{drive_base}/root:/{ORDERS_FOLDER}:/children",
