@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import init_db, get_db, SessionLocal
 from app.invenias import fetch_active_assignments
 from app.models import Assignment, KnowledgeChunk
-from app.routers import auth, timesheet, portfolio, dashboard, admin, profile, setup, documents, ask
+from app.routers import auth, timesheet, portfolio, dashboard, admin, profile, setup, documents, ask, automation
 from app.scheduler import start_scheduler
 from app.templates import templates
 
@@ -86,6 +86,7 @@ app.include_router(profile.router)
 app.include_router(setup.router)
 app.include_router(documents.router)
 app.include_router(ask.router)
+app.include_router(automation.router)
 
 
 @app.middleware("http")
