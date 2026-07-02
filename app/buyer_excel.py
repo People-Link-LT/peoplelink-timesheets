@@ -7,9 +7,11 @@ import openpyxl
 from openpyxl import Workbook
 
 from app.config import settings
-from app.sharepoint import resolve_token_and_drive
+from app.sharepoint import _get_token
 
 logger = logging.getLogger(__name__)
+
+_GRAPH = "https://graph.microsoft.com/v1.0"
 
 MONTH_TITLE = {
     1: "Sausis", 2: "Vasaris", 3: "Kovas", 4: "Balandis",
@@ -18,8 +20,12 @@ MONTH_TITLE = {
 }
 MONTH_NUM = {v: k for k, v in MONTH_TITLE.items()}
 
-SOURCE_DRIVE = "Sskaitos klientams"
-SOURCE_PATH = "Sąskaitos klientams/Pirkėjų sąskaitos_2025-2026/Pirkėjai_2025.xlsx"
+# Pirkėjai_2025.xlsx, "Sąskaitos klientams/Pirkėjų sąskaitos_2025-2026/" —
+# addressed by driveId+itemId (not by drive-name/path lookup): the library's
+# name doesn't cleanly resolve via SharePoint's diacritic-stripped URL slugs,
+# and item IDs are stable across edits to this same file.
+SOURCE_DRIVE_ID = "b!MmeQ4_JeWUGthWFPIGG502xnxxzpDkFFlCVzdE5VLn0sFK8Dvk_ZSL1wah8Jo0dY"
+SOURCE_ITEM_ID = "01GQTUBMNWYFHH4N4QWJGKPXN7AWVG6IPU"
 ARCHIVE_YEAR = 2025
 OUTPUT_HEADER = ["Data", "Serija ir numeris", "Suma be PVM", "PVM", "Viso", "Pirkėjo pavadinimas", "Kodas", "PVM kodas"]
 
@@ -36,17 +42,14 @@ FILE_TYPE_LABELS = {
 
 
 async def download_source_excel() -> bytes:
-    token, drive_base = await resolve_token_and_drive(
+    token = await _get_token(
         settings.sharepoint_tenant_id,
         settings.sharepoint_client_id,
         settings.sharepoint_client_secret,
-        settings.sharepoint_site_hostname,
-        settings.sharepoint_site_path,
-        drive_name=SOURCE_DRIVE,
     )
     async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
         resp = await client.get(
-            f"{drive_base}/root:/{SOURCE_PATH}:/content",
+            f"{_GRAPH}/drives/{SOURCE_DRIVE_ID}/items/{SOURCE_ITEM_ID}/content",
             headers={"Authorization": f"Bearer {token}"},
         )
         resp.raise_for_status()
