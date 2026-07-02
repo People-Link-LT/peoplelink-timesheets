@@ -93,7 +93,7 @@ async def buyer_excel_preview(
     user: User = Depends(get_current_user),
 ):
     try:
-        month_rows, _ = await be.get_month_data(month)
+        month_rows = await be.get_month_data(month)
         counts = be.summarize(month_rows)
 
         return templates.TemplateResponse(request, "automation/buyer_excel_preview.html", {

@@ -18,7 +18,6 @@ MONTH_TITLE = {
     5: "Gegužė", 6: "Birželis", 7: "Liepa", 8: "Rugpjūtis",
     9: "Rugsėjis", 10: "Spalis", 11: "Lapkritis", 12: "Gruodis",
 }
-MONTH_NUM = {v: k for k, v in MONTH_TITLE.items()}
 
 # Pirkėjai_2025.xlsx, "Sąskaitos klientams/Pirkėjų sąskaitos_2025-2026/" —
 # addressed by driveId+itemId (not by drive-name/path lookup): the library's
@@ -26,7 +25,6 @@ MONTH_NUM = {v: k for k, v in MONTH_TITLE.items()}
 # and item IDs are stable across edits to this same file.
 SOURCE_DRIVE_ID = "b!MmeQ4_JeWUGthWFPIGG502xnxxzpDkFFlCVzdE5VLn0sFK8Dvk_ZSL1wah8Jo0dY"
 SOURCE_ITEM_ID = "01GQTUBMNWYFHH4N4QWJGKPXN7AWVG6IPU"
-ARCHIVE_YEAR = 2025
 OUTPUT_HEADER = ["Data", "Serija ir numeris", "Suma be PVM", "PVM", "Viso", "Pirkėjo pavadinimas", "Kodas", "PVM kodas"]
 
 FILE_TYPES = {
@@ -119,21 +117,6 @@ def parse_month_sheet(wb, sheet_name: str) -> list[dict]:
     return rows
 
 
-def get_archive_sheets(wb) -> dict[str, list[tuple]]:
-    """Verbatim copy of every '{ARCHIVE_YEAR} [Mėnuo]' sheet, ordered Gruodis→Sausis."""
-    prefix = f"{ARCHIVE_YEAR} "
-    names = [n for n in wb.sheetnames if n.startswith(prefix)]
-    names.sort(key=lambda n: MONTH_NUM.get(n[len(prefix):], 0), reverse=True)
-
-    result = {}
-    for name in names:
-        ws = wb[name]
-        result[name] = list(ws.iter_rows(
-            min_row=1, max_row=ws.max_row, max_col=ws.max_column, values_only=True,
-        ))
-    return result
-
-
 def classify(row: dict) -> str:
     try:
         pvm = float(row["pvm"] or 0)
@@ -160,8 +143,6 @@ def summarize(month_rows: list[dict]) -> dict[str, int]:
 
 
 DATA_SHEET_WIDTHS = {"A": 12, "B": 16, "C": 12, "D": 10, "E": 12, "F": 32, "G": 14, "H": 16}
-ARCHIVE_DATE_COL = "E"
-ARCHIVE_COL_WIDTH = 12
 
 
 def _write_data_sheet(wb: Workbook, name: str, rows: list[dict]) -> None:
@@ -180,17 +161,7 @@ def _write_data_sheet(wb: Workbook, name: str, rows: list[dict]) -> None:
         ws.column_dimensions[col].width = width
 
 
-def _write_archive_sheet(wb: Workbook, name: str, raw_rows: list[tuple]) -> None:
-    ws = wb.create_sheet(name)
-    for raw in raw_rows:
-        ws.append(list(raw))
-    for cell in ws[ARCHIVE_DATE_COL][1:]:
-        if cell.value is not None:
-            cell.number_format = "yyyy-mm-dd"
-    ws.column_dimensions[ARCHIVE_DATE_COL].width = ARCHIVE_COL_WIDTH
-
-
-def build_workbook(month_rows: list[dict], archive_sheets: dict[str, list[tuple]], file_type: str) -> bytes:
+def build_workbook(month_rows: list[dict], file_type: str) -> bytes:
     type_rows = [r for r in month_rows if classify(r) == file_type]
 
     if file_type == "21":
@@ -204,26 +175,20 @@ def build_workbook(month_rows: list[dict], archive_sheets: dict[str, list[tuple]
     for series in series_list:
         _write_data_sheet(wb, series, [r for r in type_rows if series_of(r) == series])
 
-    for name, raw_rows in archive_sheets.items():
-        _write_archive_sheet(wb, name, raw_rows)
-
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
 
 
-async def get_month_data(month: int):
-    """Returns (month_rows, archive_sheets) for the given 2026 month."""
+async def get_month_data(month: int) -> list[dict]:
     content = await download_source_excel()
     wb = load_workbook(content)
     sheet_name = f"2026 {MONTH_TITLE[month]}"
-    month_rows = parse_month_sheet(wb, sheet_name)
-    archive_sheets = get_archive_sheets(wb)
-    return month_rows, archive_sheets
+    return parse_month_sheet(wb, sheet_name)
 
 
 async def generate(month: int, file_type: str) -> tuple[bytes, str]:
-    month_rows, archive_sheets = await get_month_data(month)
-    xlsx_bytes = build_workbook(month_rows, archive_sheets, file_type)
+    month_rows = await get_month_data(month)
+    xlsx_bytes = build_workbook(month_rows, file_type)
     filename = f"2026 {month:02d} {FILE_TYPES[file_type]}.xlsx"
     return xlsx_bytes, filename
