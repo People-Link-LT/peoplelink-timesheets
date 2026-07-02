@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, Response
@@ -116,8 +117,14 @@ async def buyer_excel_download(
     user: User = Depends(get_current_user),
 ):
     xlsx_bytes, filename = await be.generate(month, file_type)
+    ascii_fallback = filename.encode("ascii", "ignore").decode("ascii") or "pardavimai.xlsx"
     return Response(
         content=xlsx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_fallback}"; '
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
     )

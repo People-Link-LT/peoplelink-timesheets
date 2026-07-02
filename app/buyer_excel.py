@@ -130,7 +130,7 @@ def classify(row: dict) -> str:
         pvm = float(row["pvm"] or 0)
     except (TypeError, ValueError):
         pvm = 0
-    if pvm > 0.001:
+    if abs(pvm) > 0.001:  # non-zero, including negative storno/credit-note rows
         return "21"
     pvm_kodas = row["pvm_kodas"].strip().upper()
     if not pvm_kodas or pvm_kodas == "-" or pvm_kodas.startswith("LT"):
@@ -150,6 +150,11 @@ def summarize(month_rows: list[dict]) -> dict[str, int]:
     return counts
 
 
+DATA_SHEET_WIDTHS = {"A": 12, "B": 16, "C": 12, "D": 10, "E": 12, "F": 32, "G": 14, "H": 16}
+ARCHIVE_DATE_COL = "E"
+ARCHIVE_COL_WIDTH = 12
+
+
 def _write_data_sheet(wb: Workbook, name: str, rows: list[dict]) -> None:
     ws = wb.create_sheet(name)
     ws.append(OUTPUT_HEADER)
@@ -158,15 +163,18 @@ def _write_data_sheet(wb: Workbook, name: str, rows: list[dict]) -> None:
     for cell in ws["A"][1:]:
         if cell.value is not None:
             cell.number_format = "yyyy-mm-dd"
+    for col, width in DATA_SHEET_WIDTHS.items():
+        ws.column_dimensions[col].width = width
 
 
 def _write_archive_sheet(wb: Workbook, name: str, raw_rows: list[tuple]) -> None:
     ws = wb.create_sheet(name)
     for raw in raw_rows:
         ws.append(list(raw))
-    for cell in ws["E"][1:]:
+    for cell in ws[ARCHIVE_DATE_COL][1:]:
         if cell.value is not None:
             cell.number_format = "yyyy-mm-dd"
+    ws.column_dimensions[ARCHIVE_DATE_COL].width = ARCHIVE_COL_WIDTH
 
 
 def build_workbook(month_rows: list[dict], archive_sheets: dict[str, list[tuple]], file_type: str) -> bytes:
