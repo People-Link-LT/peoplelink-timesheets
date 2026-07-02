@@ -7,6 +7,7 @@ from app.auth import get_current_user
 from app.models import User
 from app.templates import templates
 import app.vacation_orders as vo
+import app.buyer_excel as be
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/automation")
@@ -78,4 +79,45 @@ async def vacation_orders_download(
 
 @router.get("/buyer-excel", response_class=HTMLResponse)
 def buyer_excel(request: Request, user: User = Depends(get_current_user)):
-    return templates.TemplateResponse(request, "automation/buyer_excel.html", {"user": user})
+    return templates.TemplateResponse(request, "automation/buyer_excel.html", {
+        "user": user,
+        "months": MONTHS_LT,
+    })
+
+
+@router.post("/buyer-excel/preview", response_class=HTMLResponse)
+async def buyer_excel_preview(
+    request: Request,
+    month: int = Form(...),
+    user: User = Depends(get_current_user),
+):
+    try:
+        month_rows, _ = await be.get_month_data(month)
+        counts = be.summarize(month_rows)
+
+        return templates.TemplateResponse(request, "automation/buyer_excel_preview.html", {
+            "user": user,
+            "month": month,
+            "month_name": be.MONTH_TITLE[month],
+            "counts": counts,
+            "file_type_labels": be.FILE_TYPE_LABELS,
+        })
+    except Exception as e:
+        logger.error(f"Buyer excel preview error: {e}", exc_info=True)
+        return HTMLResponse(
+            f'<div class="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">Klaida: {e}</div>'
+        )
+
+
+@router.get("/buyer-excel/download")
+async def buyer_excel_download(
+    month: int,
+    file_type: str,
+    user: User = Depends(get_current_user),
+):
+    xlsx_bytes, filename = await be.generate(month, file_type)
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

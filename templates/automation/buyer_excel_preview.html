@@ -1,0 +1,24 @@
+<div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+  <div class="px-6 py-4 border-b border-gray-100">
+    <p class="font-semibold text-gray-900">{{ month_name }} 2026</p>
+    <p class="text-sm text-gray-500">Pasirinkite, kurį failą atsisiųsti</p>
+  </div>
+
+  <ul class="divide-y divide-gray-100">
+    {% for type_key, label in file_type_labels.items() %}
+    <li class="px-6 py-4 flex items-center justify-between">
+      <div>
+        <p class="text-sm text-gray-900">{{ label }}</p>
+        <p class="text-xs text-gray-400 mt-0.5">{{ counts[type_key] }} įrašų</p>
+      </div>
+      <a href="/automation/buyer-excel/download?month={{ month }}&file_type={{ type_key }}"
+         class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        Atsisiųsti .xlsx
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
