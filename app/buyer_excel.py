@@ -90,6 +90,15 @@ def parse_month_sheet(wb, sheet_name: str) -> list[dict]:
         val = str(cell(row, key, default) or default).strip()
         return val or default
 
+    def money_cell(row, key, default=0):
+        # PVM/Viso are formula cells in the source — the cached value carries
+        # full float precision (e.g. 65.9505), but currency must round to cents.
+        val = cell(row, key, default)
+        try:
+            return round(float(val), 2)
+        except (TypeError, ValueError):
+            return default
+
     rows = []
     for row in ws.iter_rows(min_row=2, values_only=True):
         if not any(row):
@@ -100,9 +109,9 @@ def parse_month_sheet(wb, sheet_name: str) -> list[dict]:
         rows.append({
             "data": cell(row, "data", None),
             "serija": serija,
-            "suma": cell(row, "suma", 0),
-            "pvm": cell(row, "pvm", 0),
-            "viso": cell(row, "viso", 0),
+            "suma": money_cell(row, "suma", 0),
+            "pvm": money_cell(row, "pvm", 0),
+            "viso": money_cell(row, "viso", 0),
             "pirkejas": text_cell(row, "pirkejas"),
             "kodas": text_cell(row, "kodas", "-"),
             "pvm_kodas": text_cell(row, "pvm_kodas", "-"),
@@ -163,6 +172,10 @@ def _write_data_sheet(wb: Workbook, name: str, rows: list[dict]) -> None:
     for cell in ws["A"][1:]:
         if cell.value is not None:
             cell.number_format = "yyyy-mm-dd"
+    for col in ("C", "D", "E"):
+        for cell in ws[col][1:]:
+            if cell.value is not None:
+                cell.number_format = "0.00"
     for col, width in DATA_SHEET_WIDTHS.items():
         ws.column_dimensions[col].width = width
 
